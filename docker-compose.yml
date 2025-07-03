@@ -1,1 +1,26 @@
- 
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: chatflow-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env                 # load environment variables from .env file
+    networks:
+      - chatflow-net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: chatflow-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - chatflow-net
+
+networks:
+  chatflow-net:
+    driver: bridge
