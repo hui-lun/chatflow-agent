@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from services.llm import get_llm
+from .services.llm import get_llm
 
 # Create FastAPI app instance
 app = FastAPI()
