@@ -5,9 +5,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env                 # load environment variables from .env file
-    networks:
-      - chatnet
+      - .env  # load environment variables from .env file
 
   frontend:
     build: ./frontend
@@ -16,10 +14,42 @@ services:
       - "3000:80"
     depends_on:
       - backend
-    networks:
-      - chatnet
+
+  mongodb:
+    image: mongo:8.0
+    container_name: chatbot-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    env_file:
+      - .env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0-20-alpine3.19
+    container_name: chatbot-mongo-express
+    restart: always
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb
 
 networks:
-  chatnet:
+  default:
     name: chatnet-chatflow
     driver: bridge
+
+volumes:
+  mongodb_data:
+    name: chatbot-mongodb-data
