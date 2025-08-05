@@ -1,0 +1,260 @@
+@use '../variables' as *;
+
+.chat-container {
+  max-width: 800px;
+  margin: $spacing-lg auto;
+  background: $bg-white;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-medium;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  min-height: 600px;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $spacing-lg $spacing-xl;
+  background: $bg-light;
+  border-bottom: 1px solid $border-light;
+  box-shadow: $shadow-light;
+  border-radius: $radius-lg $radius-lg 0 0;
+
+  h2 {
+    margin: 0 0 $spacing-sm 0;
+    color: $text-primary;
+    font-size: 1.5rem;
+    font-weight: $font-semibold;
+  }
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
+
+  h2 {
+    margin: 0;
+    color: $text-primary;
+  }
+}
+
+.user-info {
+  color: $text-secondary;
+  font-size: $font-base;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
+}
+
+.session-controls {
+  display: flex;
+  gap: $spacing-sm;
+  align-items: center;
+
+  select {
+    padding: $spacing-xs $spacing-sm;
+    border: 1px solid $border-color;
+    border-radius: $radius-sm;
+    background: $bg-white;
+    font-size: $font-base;
+    min-width: 150px;
+  }
+}
+
+.new-session-btn {
+  padding: $spacing-xs $spacing-md;
+  border: none;
+  border-radius: $radius-sm;
+  background: $success-color;
+  color: $text-white;
+  cursor: pointer;
+  font-size: $font-base;
+  font-weight: $font-medium;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background: $success-hover;
+  }
+}
+
+.logout-btn {
+  padding: $spacing-xs $spacing-md;
+  background: $error-color;
+  color: $text-white;
+  border: none;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  font-size: $font-base;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background: $error-hover;
+  }
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: $spacing-lg $spacing-xl;
+  background: $bg-white;
+
+  .chat-message {
+    margin-bottom: $spacing-md;
+    padding: $spacing-sm $spacing-md;
+    border-radius: $radius-md;
+    max-width: 80%;
+
+    &.user {
+      background: $bg-blue-light;
+      border: 1px solid $border-blue;
+      margin-left: auto;
+      align-self: flex-end;
+
+      .message-header {
+        color: $border-focus;
+      }
+    }
+
+    &.bot {
+      background: $bg-green-light;
+      border: 1px solid $border-green;
+      margin-right: auto;
+      align-self: flex-start;
+
+      .message-header {
+        color: $success-color;
+      }
+
+      &.loading {
+        background: #f0f0f0;
+        border-color: #d9d9d9;
+
+        .message-content {
+          color: $text-secondary;
+          font-style: italic;
+        }
+      }
+    }
+
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: $spacing-xs;
+      font-size: $font-sm;
+      font-weight: $font-medium;
+
+      .role-label {
+        font-weight: $font-semibold;
+      }
+
+      .timestamp {
+        color: $text-muted;
+        font-size: $font-xs;
+      }
+    }
+
+    .message-content {
+      line-height: 1.5;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+  }
+}
+
+.chat-input {
+  padding: $spacing-lg $spacing-xl;
+  border-top: 1px solid $border-light;
+  background: $bg-light;
+  border-radius: 0 0 $radius-lg $radius-lg;
+  display: flex;
+  gap: $spacing-sm;
+
+  input {
+    flex: 1;
+    padding: $spacing-sm $spacing-md;
+    border-radius: $radius-md;
+    border: 1px solid #d9d9d9;
+    font-size: $font-base;
+    transition: border-color $transition-normal;
+
+    &:focus {
+      outline: none;
+      border-color: $border-focus;
+      box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+    }
+
+    &:disabled {
+      background: $bg-gray;
+      color: $text-muted;
+      cursor: not-allowed;
+    }
+  }
+
+  button {
+    padding: $spacing-sm $spacing-xl;
+    border-radius: $radius-md;
+    border: none;
+    background: $border-focus;
+    color: $text-white;
+    cursor: pointer;
+    font-size: $font-base;
+    font-weight: $font-medium;
+    transition: background-color $transition-normal;
+
+    &:hover:not(:disabled) {
+      background: #096dd9;
+    }
+
+    &:disabled {
+      background: #d9d9d9;
+      color: $text-muted;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// Responsive Design
+@media (max-width: $mobile) {
+  .chat-container {
+    margin: 10px;
+    height: 95vh;
+  }
+
+  .chat-header {
+    padding: $spacing-md $spacing-lg;
+
+    .session-controls {
+      flex-direction: column;
+      align-items: stretch;
+
+      select, .new-session-btn {
+        width: 100%;
+      }
+    }
+  }
+
+  .chat-messages {
+    padding: $spacing-md $spacing-lg;
+
+    .chat-message {
+      max-width: 90%;
+    }
+  }
+
+  .chat-input {
+    padding: $spacing-md $spacing-lg;
+    flex-direction: column;
+
+    input, button {
+      width: 100%;
+    }
+  }
+}

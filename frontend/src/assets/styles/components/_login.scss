@@ -1,0 +1,137 @@
+@use '../variables' as *;
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: $primary-gradient;
+  padding: $spacing-lg;
+}
+
+.login-card {
+  background: $bg-white;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-dark;
+  padding: $spacing-3xl;
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: $spacing-2xl;
+
+  h1 {
+    color: $text-primary;
+    margin: 0 0 $spacing-xs 0;
+    font-size: $font-2xl;
+    font-weight: $font-semibold;
+  }
+
+  p {
+    color: $text-secondary;
+    margin: 0;
+    font-size: $font-md;
+  }
+}
+
+.login-form {
+  margin-bottom: $spacing-2xl;
+}
+
+.form-group {
+  margin-bottom: $spacing-lg;
+
+  label {
+    display: block;
+    margin-bottom: $spacing-xs;
+    color: $text-primary;
+    font-weight: $font-medium;
+    font-size: $font-base;
+  }
+
+  input {
+    width: 100%;
+    padding: $spacing-sm $spacing-md;
+    border: 2px solid $border-color;
+    border-radius: $radius-md;
+    font-size: $font-md;
+    transition: border-color $transition-normal;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $primary-color;
+    }
+
+    &:disabled {
+      background-color: $bg-gray;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.error-message {
+  background-color: $bg-error-light;
+  color: $error-color;
+  padding: $spacing-sm;
+  border-radius: $radius-sm;
+  margin-bottom: $spacing-lg;
+  font-size: $font-base;
+  border: 1px solid $border-error;
+}
+
+.login-btn {
+  width: 100%;
+  padding: $spacing-base;
+  background: $primary-gradient;
+  color: $text-white;
+  border: none;
+  border-radius: $radius-md;
+  font-size: $font-md;
+  font-weight: $font-semibold;
+  cursor: pointer;
+  transition: transform $transition-fast;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+.demo-accounts {
+  border-top: 1px solid $border-color;
+  padding-top: $spacing-lg;
+
+  h3 {
+    color: $text-primary;
+    margin: 0 0 15px 0;
+    font-size: $font-md;
+    font-weight: $font-semibold;
+  }
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.account-item {
+  background-color: $bg-light;
+  padding: 10px $spacing-sm;
+  border-radius: $radius-sm;
+  font-size: $font-base;
+  color: $text-secondary;
+  border: 1px solid $border-color;
+
+  strong {
+    color: $text-primary;
+  }
+}

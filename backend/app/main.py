@@ -1,9 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
 from .services.llm import get_llm
 from .services.database import db_service
+from .auth import AuthService, get_current_user, set_auth_service
+from .models import LoginRequest, LoginResponse, UserResponse
+from datetime import timedelta
+import os
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -11,6 +16,18 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI app instance
 app = FastAPI()
+
+# 加入 CORS 中間件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://frontend:80", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 全域認證服務實例
+auth_service = None
 
 # 啟動時連接資料庫
 @app.on_event("startup")
@@ -20,6 +37,12 @@ async def startup_event():
         logger.info("Connecting to database...")
         db_service.connect()
         logger.info("Database connected successfully")
+        
+        # 初始化認證服務
+        global auth_service
+        auth_service = AuthService(db_service.client)
+        set_auth_service(auth_service)
+        logger.info("Auth service initialized")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         # 不拋出異常，讓應用繼續運行
@@ -69,13 +92,48 @@ class SessionsResponse(BaseModel):
     """
     sessions: List[str]
 
+# 認證路由
+@app.post("/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """使用者登入"""
+    try:
+        if auth_service is None:
+            raise HTTPException(status_code=500, detail="Auth service not initialized")
+            
+        user = auth_service.authenticate_user(request.username, request.password)
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password"
+            )
+        
+        access_token_expires = timedelta(minutes=30)
+        access_token = auth_service.create_access_token(
+            data={"sub": user["username"]}, expires_delta=access_token_expires
+        )
+        
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            username=user["username"]
+        )
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """取得當前使用者資訊"""
+    return UserResponse(username=current_user["username"])
+
+# 受保護的聊天路由
 @app.post("/chat", response_model=ChatResponse)
-def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
     Receives a user message, sends it to the vLLM API, saves to database, and returns the response.
     """
     try:
-        logger.info(f"Received chat request: {request.message[:50]}...")
+        logger.info(f"Received chat request from {current_user['username']}: {request.message[:50]}...")
         
         llm = get_llm()
         # Send the message to the LLM and get the response
@@ -104,7 +162,11 @@ def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chat/history", response_model=ChatHistoryResponse)
-def get_chat_history(session_id: Optional[str] = None, limit: int = 50):
+async def get_chat_history(
+    session_id: Optional[str] = None, 
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Get chat history for a specific session or all sessions.
     """
@@ -130,7 +192,7 @@ def get_chat_history(session_id: Optional[str] = None, limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chat/sessions", response_model=SessionsResponse)
-def get_all_sessions():
+async def get_all_sessions(current_user: dict = Depends(get_current_user)):
     """
     Get all available session IDs.
     """
