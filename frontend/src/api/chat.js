@@ -80,6 +80,16 @@ export async function getAllSessions() {
 }
 
 /**
+ * Delete a specific session and all its chat messages.
+ * @param {string} sessionId - The session ID to delete.
+ * @returns {Promise<Object>} - The response from the backend.
+ */
+export async function deleteSession(sessionId) {
+  const res = await api.delete(`/chat/sessions/${sessionId}`)
+  return res.data
+}
+
+/**
  * Health check endpoint.
  * @returns {Promise<Object>} - Health status.
  */

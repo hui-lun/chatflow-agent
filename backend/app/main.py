@@ -208,6 +208,28 @@ async def get_all_sessions(current_user: dict = Depends(get_current_user)):
         logger.error(f"Error getting sessions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/chat/sessions/{session_id}")
+async def delete_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Delete a specific session and all its chat messages.
+    """
+    try:
+        logger.info(f"Deleting session {session_id} for user {current_user['username']}")
+        
+        success = db_service.delete_session(session_id=session_id, username=current_user["username"])
+        
+        if success:
+            logger.info(f"Successfully deleted session {session_id} for user {current_user['username']}")
+            return {"message": f"Session {session_id} deleted successfully", "session_id": session_id}
+        else:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found or no messages to delete")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 def health_check():
     """

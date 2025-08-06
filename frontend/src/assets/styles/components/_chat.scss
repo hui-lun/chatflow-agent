@@ -1,75 +1,38 @@
 @use '../variables' as *;
 
-.chat-container {
-  max-width: 800px;
-  margin: $spacing-lg auto;
-  background: $bg-white;
-  border-radius: $radius-lg;
-  box-shadow: $shadow-medium;
-  padding: 0;
+// App Layout - Sidebar + Main Content
+.app-layout {
   display: flex;
-  flex-direction: column;
-  height: 90vh;
-  min-height: 600px;
+  height: 100vh;
+  background: $bg-light;
 }
 
-.chat-header {
+// Sidebar Styles
+.sidebar {
+  width: 300px;
+  background: $bg-white;
+  border-right: 1px solid $border-light;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: $spacing-lg $spacing-xl;
-  background: $bg-light;
-  border-bottom: 1px solid $border-light;
+  flex-direction: column;
   box-shadow: $shadow-light;
-  border-radius: $radius-lg $radius-lg 0 0;
+}
 
-  h2 {
-    margin: 0 0 $spacing-sm 0;
+.sidebar-header {
+  padding: $spacing-lg $spacing-md;
+  border-bottom: 1px solid $border-light;
+  background: $bg-light;
+
+  h3 {
+    margin: 0 0 $spacing-md 0;
     color: $text-primary;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: $font-semibold;
   }
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: $spacing-lg;
-
-  h2 {
-    margin: 0;
-    color: $text-primary;
-  }
-}
-
-.user-info {
-  color: $text-secondary;
-  font-size: $font-base;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: $spacing-lg;
-}
-
-.session-controls {
-  display: flex;
-  gap: $spacing-sm;
-  align-items: center;
-
-  select {
-    padding: $spacing-xs $spacing-sm;
-    border: 1px solid $border-color;
-    border-radius: $radius-sm;
-    background: $bg-white;
-    font-size: $font-base;
-    min-width: 150px;
-  }
-}
-
-.new-session-btn {
-  padding: $spacing-xs $spacing-md;
+.new-chat-btn {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
   border: none;
   border-radius: $radius-sm;
   background: $success-color;
@@ -84,8 +47,102 @@
   }
 }
 
+.sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: $spacing-sm 0;
+}
+
+.empty-state {
+  padding: $spacing-xl $spacing-md;
+  text-align: center;
+  color: $text-muted;
+
+  .empty-icon {
+    font-size: 2rem;
+    margin-bottom: $spacing-md;
+  }
+
+  .empty-text {
+    font-size: $font-base;
+    font-weight: $font-medium;
+    margin-bottom: $spacing-xs;
+    color: $text-secondary;
+  }
+
+  .empty-hint {
+    font-size: $font-sm;
+    color: $text-muted;
+  }
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-sm $spacing-md;
+  margin: 2px $spacing-sm;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background: $bg-light;
+  }
+
+  &.active {
+    background: $bg-blue-light;
+    border-left: 3px solid $border-focus;
+  }
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0; // for text truncation
+
+  .session-name {
+    display: block;
+    font-size: $font-base;
+    font-weight: $font-medium;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: $spacing-xs;
+  border-radius: $radius-xs;
+  font-size: $font-sm;
+  opacity: 0.6;
+  transition: opacity $transition-fast, background-color $transition-fast;
+
+  &:hover {
+    opacity: 1;
+    background: $bg-light;
+  }
+}
+
+.sidebar-footer {
+  padding: $spacing-md;
+  border-top: 1px solid $border-light;
+  background: $bg-light;
+
+  .user-info {
+    color: $text-secondary;
+    font-size: $font-sm;
+    margin-bottom: $spacing-sm;
+    text-align: center;
+  }
+}
+
 .logout-btn {
-  padding: $spacing-xs $spacing-md;
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
   background: $error-color;
   color: $text-white;
   border: none;
@@ -99,11 +156,52 @@
   }
 }
 
+// Main Content Area
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: $bg-white;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: $spacing-lg $spacing-xl;
   background: $bg-white;
+  display: flex;
+  flex-direction: column;
+
+  .chat-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: $text-muted;
+    padding: $spacing-3xl;
+
+    .welcome-icon {
+      font-size: 3rem;
+      margin-bottom: $spacing-lg;
+    }
+
+    h3 {
+      margin: 0 0 $spacing-md 0;
+      color: $text-primary;
+      font-size: 1.5rem;
+      font-weight: $font-semibold;
+    }
+
+    p {
+      margin: 0;
+      color: $text-secondary;
+      font-size: $font-base;
+      max-width: 300px;
+      line-height: 1.5;
+    }
+  }
 
   .chat-message {
     margin-bottom: $spacing-md;
@@ -173,7 +271,6 @@
   padding: $spacing-lg $spacing-xl;
   border-top: 1px solid $border-light;
   background: $bg-light;
-  border-radius: 0 0 $radius-lg $radius-lg;
   display: flex;
   gap: $spacing-sm;
 
@@ -221,26 +318,110 @@
   }
 }
 
-// Responsive Design
-@media (max-width: $mobile) {
-  .chat-container {
-    margin: 10px;
-    height: 95vh;
+// Modal Styles for Delete Confirmation
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: $bg-white;
+  padding: $spacing-xl;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-large;
+  max-width: 400px;
+  width: 90%;
+
+  h4 {
+    margin: 0 0 $spacing-md 0;
+    color: $text-primary;
+    font-size: 1.2rem;
+    font-weight: $font-semibold;
   }
 
-  .chat-header {
-    padding: $spacing-md $spacing-lg;
+  p {
+    margin: 0 0 $spacing-lg 0;
+    color: $text-secondary;
+    line-height: 1.5;
+  }
+}
 
-    .session-controls {
-      flex-direction: column;
-      align-items: stretch;
+.modal-actions {
+  display: flex;
+  gap: $spacing-sm;
+  justify-content: flex-end;
 
-      select, .new-session-btn {
-        width: 100%;
+  button {
+    padding: $spacing-sm $spacing-lg;
+    border: none;
+    border-radius: $radius-sm;
+    cursor: pointer;
+    font-size: $font-base;
+    font-weight: $font-medium;
+    transition: background-color $transition-fast;
+  }
+
+  .cancel-btn {
+    background: $bg-light;
+    color: $text-secondary;
+    border: 1px solid $border-light;
+
+    &:hover {
+      background: $bg-gray;
+    }
+  }
+
+  .confirm-btn {
+    background: $error-color;
+    color: $text-white;
+
+    &:hover {
+      background: $error-hover;
+    }
+  }
+}
+
+// Responsive Design
+@media (max-width: $tablet) {
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid $border-light;
+
+    .sessions-list {
+      display: flex;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      padding: $spacing-sm;
+
+      .session-item {
+        flex-shrink: 0;
+        margin-right: $spacing-sm;
+        min-width: 150px;
       }
     }
   }
 
+  .main-content {
+    height: calc(100vh - 200px);
+  }
+}
+
+@media (max-width: $mobile) {
   .chat-messages {
     padding: $spacing-md $spacing-lg;
 
@@ -254,6 +435,18 @@
     flex-direction: column;
 
     input, button {
+      width: 100%;
+    }
+  }
+
+  .modal-content {
+    padding: $spacing-lg;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+
+    button {
       width: 100%;
     }
   }

@@ -122,6 +122,33 @@ class DatabaseService:
         except Exception as e:
             print(f"Failed to get sessions: {e}")
             raise
+    
+    def delete_session(self, session_id: str, username: str) -> bool:
+        """刪除指定會話的所有聊天記錄"""
+        if not self._check_collection():
+            raise RuntimeError("Database not connected")
+        
+        if not username:
+            raise ValueError("Username is required for deleting session")
+        
+        if not session_id:
+            raise ValueError("Session ID is required for deleting session")
+        
+        try:
+            # 只刪除屬於該用戶的指定會話記錄
+            filter_query = {"username": username, "session_id": session_id}
+            result = self.chat_collection.delete_many(filter_query)
+            
+            if result.deleted_count > 0:
+                print(f"Deleted {result.deleted_count} messages from session {session_id} for user {username}")
+                return True
+            else:
+                print(f"No messages found for session {session_id} and user {username}")
+                return False
+                
+        except Exception as e:
+            print(f"Failed to delete session {session_id}: {e}")
+            raise
 
 # 全域資料庫服務實例
 db_service = DatabaseService() 
