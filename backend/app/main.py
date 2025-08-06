@@ -79,6 +79,7 @@ class ChatHistoryItem(BaseModel):
     bot_response: str
     timestamp: str
     session_id: str
+    username: str
 
 class ChatHistoryResponse(BaseModel):
     """
@@ -148,7 +149,8 @@ async def chat_endpoint(request: ChatRequest, current_user: dict = Depends(get_c
             db_service.save_chat_message(
                 user_message=request.message,
                 bot_response=bot_response,
-                session_id=session_id
+                session_id=session_id,
+                username=current_user["username"]
             )
             logger.info("Chat message saved to database")
         except Exception as db_error:
@@ -171,8 +173,8 @@ async def get_chat_history(
     Get chat history for a specific session or all sessions.
     """
     try:
-        logger.info(f"Getting chat history for session: {session_id}, limit: {limit}")
-        history = db_service.get_chat_history(session_id=session_id, limit=limit)
+        logger.info(f"Getting chat history for user {current_user['username']}, session: {session_id}, limit: {limit}")
+        history = db_service.get_chat_history(session_id=session_id, username=current_user["username"], limit=limit)
         
         # 轉換為 Pydantic 模型
         history_items = [
@@ -180,7 +182,8 @@ async def get_chat_history(
                 user_message=item["user_message"],
                 bot_response=item["bot_response"],
                 timestamp=item["timestamp"].isoformat(),
-                session_id=item["session_id"]
+                session_id=item["session_id"],
+                username=item["username"]
             )
             for item in history
         ]
@@ -197,9 +200,9 @@ async def get_all_sessions(current_user: dict = Depends(get_current_user)):
     Get all available session IDs.
     """
     try:
-        logger.info("Getting all sessions")
-        sessions = db_service.get_all_sessions()
-        logger.info(f"Retrieved {len(sessions)} sessions")
+        logger.info(f"Getting all sessions for user {current_user['username']}")
+        sessions = db_service.get_all_sessions(username=current_user["username"])
+        logger.info(f"Retrieved {len(sessions)} sessions for user {current_user['username']}")
         return SessionsResponse(sessions=sessions)
     except Exception as e:
         logger.error(f"Error getting sessions: {e}")

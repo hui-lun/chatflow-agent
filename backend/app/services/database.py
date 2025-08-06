@@ -47,16 +47,20 @@ class DatabaseService:
         """檢查集合是否可用"""
         return self.chat_collection is not None
     
-    def save_chat_message(self, user_message: str, bot_response: str, session_id: str = None) -> str:
+    def save_chat_message(self, user_message: str, bot_response: str, session_id: str = None, username: str = None) -> str:
         """儲存聊天訊息到資料庫"""
         if not self._check_collection():
             raise RuntimeError("Database not connected")
+        
+        if not username:
+            raise ValueError("Username is required for saving chat messages")
         
         try:
             chat_record = {
                 "user_message": user_message,
                 "bot_response": bot_response,
                 "session_id": session_id or "default",
+                "username": username,
                 "timestamp": datetime.utcnow(),
                 "created_at": datetime.utcnow()
             }
@@ -67,13 +71,16 @@ class DatabaseService:
             print(f"Failed to save chat message: {e}")
             raise
     
-    def get_chat_history(self, session_id: str = None, limit: int = 50) -> List[dict]:
+    def get_chat_history(self, session_id: str = None, username: str = None, limit: int = 50) -> List[dict]:
         """獲取聊天歷史記錄"""
         if not self._check_collection():
             raise RuntimeError("Database not connected")
         
+        if not username:
+            raise ValueError("Username is required for getting chat history")
+        
         try:
-            filter_query = {}
+            filter_query = {"username": username}
             if session_id:
                 filter_query["session_id"] = session_id
             
@@ -83,6 +90,7 @@ class DatabaseService:
                 "user_message": 1,
                 "bot_response": 1,
                 "session_id": 1,
+                "username": 1,
                 "timestamp": 1,
                 "created_at": 1
             }
@@ -100,13 +108,16 @@ class DatabaseService:
             print(f"Failed to get chat history: {e}")
             raise
     
-    def get_all_sessions(self) -> List[str]:
+    def get_all_sessions(self, username: str = None) -> List[str]:
         """獲取所有會話 ID"""
         if not self._check_collection():
             raise RuntimeError("Database not connected")
         
+        if not username:
+            raise ValueError("Username is required for getting sessions")
+        
         try:
-            sessions = self.chat_collection.distinct("session_id")
+            sessions = self.chat_collection.distinct("session_id", {"username": username})
             return sessions
         except Exception as e:
             print(f"Failed to get sessions: {e}")

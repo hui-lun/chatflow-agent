@@ -7,7 +7,8 @@ import requests
 import json
 import time
 
-BASE_URL = "http://localhost:3000"
+# 使用 backend API 端口測試
+BASE_URL = "http://localhost:8000"
 
 def test_health_check():
     """測試健康檢查端點"""

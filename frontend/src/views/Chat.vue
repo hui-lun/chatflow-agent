@@ -8,9 +8,8 @@
       <div class="header-right">
         <div class="session-controls">
           <select v-model="currentSession" @change="loadChatHistory">
-            <option value="default">Default Session</option>
-            <option v-for="session in sessions" :key="session" :value="session" v-if="session !== 'default'">
-              {{ session }}
+            <option v-for="session in displaySessions" :key="session.value" :value="session.value">
+              {{ session.label }}
             </option>
           </select>
           <button @click="createNewSession" class="new-session-btn">New Session</button>
@@ -55,6 +54,7 @@ const messages = ref([])
 const loading = ref(false)
 const currentSession = ref('default')
 const sessions = ref([])
+const displaySessions = ref([])
 const messagesContainer = ref(null)
 const username = ref('')
 
@@ -76,9 +76,26 @@ const loadChatHistory = async () => {
 const loadSessions = async () => {
   try {
     sessions.value = await getAllSessions()
+    updateDisplaySessions()
   } catch (error) {
     console.error('Failed to load sessions:', error)
   }
+}
+
+// 更新顯示的會話列表
+const updateDisplaySessions = () => {
+  const sessionList = sessions.value || []
+  
+  // 確保至少有一個 default session
+  if (sessionList.length === 0 || !sessionList.includes('default')) {
+    sessionList.unshift('default')
+  }
+  
+  // 轉換為顯示格式，default session 顯示為 "Default Session"
+  displaySessions.value = sessionList.map(session => ({
+    value: session,
+    label: session === 'default' ? 'Default Session' : session
+  }))
 }
 
 // 創建新會話
@@ -86,7 +103,11 @@ const createNewSession = () => {
   const newSessionId = `session_${Date.now()}`
   currentSession.value = newSessionId
   messages.value = []
-  loadSessions()
+  // 立即更新顯示列表包含新會話
+  if (!sessions.value.includes(newSessionId)) {
+    sessions.value.push(newSessionId)
+    updateDisplaySessions()
+  }
 }
 
 // 發送訊息
