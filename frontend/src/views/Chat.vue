@@ -4,7 +4,14 @@
     <div class="sidebar">
       <div class="sidebar-header">
         <h3>對話紀錄</h3>
-        <button @click="createNewSession" class="new-chat-btn">+ New Chat</button>
+        <button 
+          @click="createNewSession" 
+          :disabled="displaySessions.length === 0"
+          class="new-chat-btn"
+          :title="displaySessions.length === 0 ? '請先發送訊息開始對話' : '創建新對話'"
+        >
+          + New Chat
+        </button>
       </div>
       
       <div class="sessions-list">

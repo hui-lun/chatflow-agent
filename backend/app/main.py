@@ -1,12 +1,14 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
 import logging
 from .services.llm import get_llm
 from .services.database import db_service
 from .auth import AuthService, get_current_user, set_auth_service
-from .models import LoginRequest, LoginResponse, UserResponse
+from .models import (
+    LoginRequest, LoginResponse, UserResponse,
+    ChatRequest, ChatResponse, ChatHistoryItem, ChatHistoryResponse, SessionsResponse
+)
 from datetime import timedelta
 import os
 
@@ -56,42 +58,6 @@ async def shutdown_event():
         logger.info("Database disconnected")
     except Exception as e:
         logger.error(f"Error disconnecting from database: {e}")
-
-class ChatRequest(BaseModel):
-    """
-    Request model for chat endpoint.
-    """
-    message: str
-    session_id: Optional[str] = None
-
-class ChatResponse(BaseModel):
-    """
-    Response model for chat endpoint.
-    """
-    response: str
-    session_id: str
-
-class ChatHistoryItem(BaseModel):
-    """
-    Model for chat history item.
-    """
-    user_message: str
-    bot_response: str
-    timestamp: str
-    session_id: str
-    username: str
-
-class ChatHistoryResponse(BaseModel):
-    """
-    Response model for chat history endpoint.
-    """
-    history: List[ChatHistoryItem]
-
-class SessionsResponse(BaseModel):
-    """
-    Response model for sessions endpoint.
-    """
-    sessions: List[str]
 
 # 認證路由
 @app.post("/auth/login", response_model=LoginResponse)
