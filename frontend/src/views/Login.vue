@@ -40,21 +40,6 @@
           <span v-else>登入</span>
         </button>
       </form>
-      
-      <div class="demo-accounts">
-        <h3>測試帳號</h3>
-        <div class="account-list">
-          <div class="account-item">
-            <strong>admin</strong> / admin123
-          </div>
-          <div class="account-item">
-            <strong>user1</strong> / user123
-          </div>
-          <div class="account-item">
-            <strong>user2</strong> / user456
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
