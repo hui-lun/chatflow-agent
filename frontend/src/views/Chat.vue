@@ -12,7 +12,7 @@
               {{ session.label }}
             </option>
           </select>
-          <button @click="createNewSession" class="new-session-btn">New Session</button>
+          <button @click="createNewSession" class="new-session-btn">New Chat</button>
         </div>
         <button @click="handleLogout" class="logout-btn">登出</button>
       </div>
