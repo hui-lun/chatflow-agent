@@ -320,51 +320,180 @@
   display: flex;
   gap: $spacing-sm;
 
-  input {
+  .input-wrapper {
     flex: 1;
-    padding: $spacing-sm $spacing-md;
-    border-radius: $radius-md;
-    border: 1px solid #d9d9d9;
-    font-size: $font-base;
-    transition: border-color $transition-normal;
+    position: relative;
+    display: flex;
+    align-items: center;
 
-    &:focus {
-      outline: none;
-      border-color: $border-focus;
-      box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+    .web-search-tag {
+      position: absolute;
+      right: 70px; // 在按鈕組左側
+      top: 50%;
+      transform: translateY(-50%);
+      background: #52c41a;
+      color: white;
+      padding: 2px 6px 2px 6px;
+      padding-right: 20px; // 為取消按鈕留空間
+      border-radius: $radius-xs;
+      font-size: 11px;
+      font-weight: $font-medium;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      z-index: 1;
+
+      .tag-icon {
+        font-size: 10px;
+      }
+
+      .tag-text {
+        white-space: nowrap;
+      }
+
+      .tag-cancel-btn {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        color: #52c41a;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all $transition-fast;
+        z-index: 2;
+
+        &:hover {
+          background: white;
+          color: #ff4d4f;
+          transform: scale(1.1);
+        }
+      }
     }
 
-    &:disabled {
-      background: $bg-gray;
-      color: $text-muted;
-      cursor: not-allowed;
+    input {
+      width: 100%;
+      padding: $spacing-sm $spacing-md;
+      padding-right: 45px; // 為加號按鈕留空間
+      border-radius: $radius-md;
+      border: 1px solid #d9d9d9;
+      font-size: $font-base;
+      transition: border-color $transition-normal;
+
+      &:focus {
+        outline: none;
+        border-color: $border-focus;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+      }
+
+      &:disabled {
+        background: $bg-gray;
+        color: $text-muted;
+        cursor: not-allowed;
+      }
+
+      &.web-search-mode {
+        border-color: #52c41a;
+        box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
+        padding-left: $spacing-md; // 恢復正常左側間距
+        padding-right: 150px; // 為標籤、取消按鈕和加號按鈕留足空間
+      }
+    }
+
+
+    .plus-btn {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: $bg-white;
+      color: $text-secondary;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all $transition-normal;
+      z-index: 1;
+
+      &:hover {
+        background: $bg-blue-light;
+        color: $border-focus;
+      }
+
+      &.active {
+        background: $border-focus;
+        color: $text-white;
+      }
+    }
+
+    .web-search-dropdown {
+      position: absolute;
+      bottom: 100%;
+      right: 0;
+      margin-bottom: 4px;
+      background: $bg-white;
+      border: 1px solid $border-light;
+      border-radius: $radius-md;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      min-width: 240px;
+      transform-origin: bottom right;
+      animation: dropdownFadeIn 0.15s ease-out;
+
+      .dropdown-item {
+        display: flex;
+        align-items: center;
+        padding: $spacing-sm $spacing-md;
+        cursor: pointer;
+        transition: background-color $transition-fast;
+        white-space: nowrap;
+
+        &:hover {
+          background: $bg-gray;
+        }
+
+        .dropdown-icon {
+          margin-right: $spacing-sm;
+          font-size: 16px;
+        }
+
+        .dropdown-text {
+          flex: 1;
+          font-size: $font-sm;
+          color: $text-primary;
+        }
+
+        .dropdown-check {
+          color: #52c41a;
+          font-size: 14px;
+          font-weight: bold;
+        }
+      }
     }
   }
 
-  .tool-btn {
-    padding: $spacing-sm;
-    border-radius: $radius-md;
-    border: 1px solid #d9d9d9;
-    background: $bg-white;
-    color: $text-secondary;
-    cursor: pointer;
-    font-size: 1.2em;
-    transition: all $transition-normal;
-    min-width: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover {
-      border-color: $border-focus;
-      color: $border-focus;
-      background: $bg-blue-light;
+  // 下拉選單動畫
+  @keyframes dropdownFadeIn {
+    0% {
+      opacity: 0;
+      transform: scale(0.95) translateY(5px);
     }
-
-    &.active {
-      background: $border-focus;
-      color: $text-white;
-      border-color: $border-focus;
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
     }
   }
 
@@ -390,10 +519,6 @@
     }
   }
 
-  input.web-search-mode {
-    border-color: #52c41a;
-    box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
-  }
 }
 
 // Modal Styles for Delete Confirmation

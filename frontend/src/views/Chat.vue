@@ -67,7 +67,7 @@
           </div>
           <div class="message-content">{{ msg.content }}</div>
           <div v-if="msg.search_sources && msg.search_sources.length > 0" class="search-sources">
-            <div class="sources-label">🔍 Sources:</div>
+            <div class="sources-label">+ Sources:</div>
             <div class="sources-list">
               <a v-for="(source, sourceIdx) in msg.search_sources" 
                  :key="sourceIdx" 
@@ -85,24 +85,55 @@
       </div>
       
       <form class="chat-input" @submit.prevent="sendMessage">
-        <input 
-          v-model="input" 
-          type="text" 
-          :placeholder="useWebSearch ? 'Search the web and chat...' : 'Type your message...'"
-          :disabled="loading"
-          :class="{ 'web-search-mode': useWebSearch }"
-        />
-        <button 
-          type="button" 
-          @click="toggleWebSearch" 
-          class="tool-btn"
-          :class="{ active: useWebSearch }"
-          :title="useWebSearch ? 'Disable web search' : 'Enable web search'"
-        >
-          🔍
-        </button>
+        <div class="input-wrapper">
+          <!-- Web Search 標籤 -->
+          <div v-if="useWebSearch" class="web-search-tag">
+            <span class="tag-icon">🔍</span>
+            <span class="tag-text">Web Search</span>
+            <!-- 取消 Web Search 按鈕 -->
+            <button 
+              type="button" 
+              @click="cancelWebSearch" 
+              class="tag-cancel-btn"
+              title="Cancel web search"
+            >
+              ×
+            </button>
+          </div>
+          
+          <input 
+            v-model="input" 
+            type="text" 
+            :placeholder="useWebSearch ? 'Search the web and chat...' : 'Type your message...'"
+            :disabled="loading"
+            :class="{ 'web-search-mode': useWebSearch }"
+          />
+          
+          <!-- 加號按鈕 -->
+          <button 
+            type="button" 
+            @click="toggleWebSearchMenu" 
+            class="plus-btn"
+            :class="{ active: showWebSearchMenu }"
+            title="Add web search"
+          >
+            +
+          </button>
+          
+          <!-- Dropdown menu -->
+          <div 
+            v-if="showWebSearchMenu" 
+            class="web-search-dropdown"
+          >
+            <div class="dropdown-item" @click="toggleWebSearch">
+              <span class="dropdown-icon">🔍</span>
+              <span class="dropdown-text">Web Search</span>
+              <span v-if="useWebSearch" class="dropdown-check">✓</span>
+            </div>
+          </div>
+        </div>
         <button type="submit" :disabled="loading || !input.trim()">
-          {{ loading ? (useWebSearch ? 'Searching...' : 'Sending...') : 'Send' }}
+          {{ loading ? (useWebSearch ? 'Searching' : 'Sending') : 'Send' }}
         </button>
       </form>
     </div>
@@ -138,6 +169,7 @@ const username = ref('')
 const showDeleteConfirm = ref(false)
 const sessionToDelete = ref(null)
 const useWebSearch = ref(false)
+const showWebSearchMenu = ref(false)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -196,7 +228,25 @@ const createNewSession = () => {
 // 切換 web search 模式
 const toggleWebSearch = () => {
   useWebSearch.value = !useWebSearch.value
+  showWebSearchMenu.value = false // 選擇後關閉選單
 }
+
+// 切換 web search 選單顯示
+const toggleWebSearchMenu = () => {
+  showWebSearchMenu.value = !showWebSearchMenu.value
+}
+
+// 關閉 web search 選單 (點擊外部時)
+const closeWebSearchMenu = () => {
+  showWebSearchMenu.value = false
+}
+
+// 取消 Web Search 模式
+const cancelWebSearch = () => {
+  useWebSearch.value = false
+  showWebSearchMenu.value = false
+}
+
 
 // 發送訊息
 const sendMessage = async () => {
@@ -346,6 +396,16 @@ onMounted(async () => {
     // 否則確保聊天區域是空的
     messages.value = []
   }
+  
+  // 添加點擊外部關閉選單的事件監聽器
+  document.addEventListener('click', (event) => {
+    const inputWrapper = event.target.closest('.input-wrapper')
+    const dropdown = event.target.closest('.web-search-dropdown')
+    if (!inputWrapper && !dropdown && showWebSearchMenu.value) {
+      closeWebSearchMenu()
+    }
+  })
+  
 })
 </script>
 
