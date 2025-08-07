@@ -143,8 +143,8 @@ class DatabaseService:
                 print(f"Deleted {result.deleted_count} messages from session {session_id} for user {username}")
                 return True
             else:
-                print(f"No messages found for session {session_id} and user {username}")
-                return False
+                print(f"No messages found for session {session_id} and user {username}, but allowing empty session deletion")
+                return True
                 
         except Exception as e:
             print(f"Failed to delete session {session_id}: {e}")
