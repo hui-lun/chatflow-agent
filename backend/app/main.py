@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import logging
+from langchain_core.messages import HumanMessage, AIMessage
 from .services.llm import get_llm
 from .services.database import db_service
 from .auth import AuthService, get_current_user, set_auth_service
@@ -103,14 +104,32 @@ async def chat_endpoint(request: ChatRequest, current_user: dict = Depends(get_c
         logger.info(f"Received chat request from {current_user['username']}: {request.message[:50]}...")
         
         llm = get_llm()
-        # Send the message to the LLM and get the response
-        result = llm.invoke(request.message)
+        session_id = request.session_id or "default"
+
+        # 1️⃣ 載入聊天歷史（從 MongoDB 或其他 DB）
+        try:
+            history = db_service.get_chat_history(
+                session_id=session_id,
+                username=current_user["username"]
+            )  # 應回傳 List[Dict]，每個 dict 至少有 user_message / bot_response
+            logger.info(f"Loaded {len(history)} historical messages")
+        except Exception as history_error:
+            logger.warning(f"Could not load chat history: {history_error}")
+            history = []
+
+        # 2️⃣ 組成對話上下文 messages 給 LLM
+        messages = []
+        for entry in history:
+            messages.append(HumanMessage(content=entry["user_message"]))
+            messages.append(AIMessage(content=entry["bot_response"]))
+        messages.append(HumanMessage(content=request.message))
+
+        # 3️⃣ 呼叫 LLM
+        result = llm.invoke(messages)
         bot_response = result.content
-        
         logger.info("LLM response received, saving to database...")
         
-        # 儲存聊天記錄到資料庫
-        session_id = request.session_id or "default"
+        # 4️⃣ 儲存對話記錄（可選擇只儲存這一輪，也可合併存整包）
         try:
             db_service.save_chat_message(
                 user_message=request.message,
