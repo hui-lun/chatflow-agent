@@ -90,6 +90,21 @@ export async function deleteSession(sessionId) {
 }
 
 /**
+ * Send a chat message with web search functionality to the backend.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @returns {Promise<Object>} - The response from the backend with search sources.
+ */
+export async function sendWebSearchChat(message, sessionId = null) {
+  const payload = { message }
+  if (sessionId) {
+    payload.session_id = sessionId
+  }
+  const res = await api.post('/chat/web-search', payload)
+  return res.data
+}
+
+/**
  * Health check endpoint.
  * @returns {Promise<Object>} - Health status.
  */

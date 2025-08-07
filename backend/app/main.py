@@ -8,7 +8,8 @@ from .services.database import db_service
 from .auth import AuthService, get_current_user, set_auth_service
 from .models import (
     LoginRequest, LoginResponse, UserResponse,
-    ChatRequest, ChatResponse, ChatHistoryItem, ChatHistoryResponse, SessionsResponse
+    ChatRequest, ChatResponse, ChatHistoryItem, ChatHistoryResponse, SessionsResponse,
+    WebSearchRequest, WebSearchResponse
 )
 from datetime import timedelta
 import os
@@ -146,6 +147,88 @@ async def chat_endpoint(request: ChatRequest, current_user: dict = Depends(get_c
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
         # Return HTTP 500 if any error occurs
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/web-search", response_model=WebSearchResponse)
+async def web_search_chat_endpoint(request: WebSearchRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Handles chat with web search functionality using SearxNG.
+    """
+    try:
+        from .services.web.analyze import analyze_web_search
+        
+        logger.info(f"Received web search chat request from {current_user['username']}: {request.message[:50]}...")
+        
+        llm = get_llm()
+        session_id = request.session_id or "default"
+
+        # 1️⃣ 載入聊天歷史
+        try:
+            history = db_service.get_chat_history(
+                session_id=session_id,
+                username=current_user["username"]
+            )
+            logger.info(f"Loaded {len(history)} historical messages")
+        except Exception as history_error:
+            logger.warning(f"Could not load chat history: {history_error}")
+            history = []
+
+        # 2️⃣ 執行網路搜索
+        try:
+            logger.info("Performing web search...")
+            search_results = analyze_web_search(request.message)
+            logger.info("Web search completed")
+        except Exception as search_error:
+            logger.error(f"Web search failed: {search_error}")
+            search_results = f"Web search failed: {search_error}"
+
+        # 3️⃣ 組成對話上下文，包含搜索結果
+        messages = []
+        for entry in history:
+            messages.append(HumanMessage(content=entry["user_message"]))
+            messages.append(AIMessage(content=entry["bot_response"]))
+        
+        # 將搜索結果和用戶問題結合
+        enhanced_prompt = f"""User question: {request.message}
+
+Web search results:
+{search_results}
+
+Please answer the user's question based on the web search results above. If the search results don't contain relevant information, acknowledge this and provide a general response."""
+        
+        messages.append(HumanMessage(content=enhanced_prompt))
+
+        # 4️⃣ 呼叫 LLM
+        result = llm.invoke(messages)
+        bot_response = result.content
+        logger.info("LLM response received, saving to database...")
+
+        # 5️⃣ 儲存對話記錄
+        try:
+            db_service.save_chat_message(
+                user_message=request.message,
+                bot_response=bot_response,
+                session_id=session_id,
+                username=current_user["username"]
+            )
+            logger.info("Chat message saved to database")
+        except Exception as db_error:
+            logger.error(f"Failed to save chat message: {db_error}")
+
+        # 提取搜索來源（從搜索結果中解析URL）
+        search_sources = []
+        if "URL:" in search_results:
+            import re
+            urls = re.findall(r'URL: (https?://[^\s]+)', search_results)
+            search_sources = urls[:5]  # 最多5個來源
+        
+        return WebSearchResponse(
+            response=bot_response, 
+            session_id=session_id,
+            search_sources=search_sources
+        )
+    except Exception as e:
+        logger.error(f"Error in web search chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chat/history", response_model=ChatHistoryResponse)

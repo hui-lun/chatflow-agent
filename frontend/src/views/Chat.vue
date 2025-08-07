@@ -66,6 +66,18 @@
             <span class="timestamp" v-if="msg.timestamp">{{ formatTimestamp(msg.timestamp) }}</span>
           </div>
           <div class="message-content">{{ msg.content }}</div>
+          <div v-if="msg.search_sources && msg.search_sources.length > 0" class="search-sources">
+            <div class="sources-label">🔍 Sources:</div>
+            <div class="sources-list">
+              <a v-for="(source, sourceIdx) in msg.search_sources" 
+                 :key="sourceIdx" 
+                 :href="source" 
+                 target="_blank" 
+                 class="source-link">
+                {{ source }}
+              </a>
+            </div>
+          </div>
         </div>
         <div v-if="loading" class="chat-message bot loading">
           <div class="message-content">Thinking...</div>
@@ -76,10 +88,22 @@
         <input 
           v-model="input" 
           type="text" 
-          placeholder="Type your message..." 
+          :placeholder="useWebSearch ? 'Search the web and chat...' : 'Type your message...'"
           :disabled="loading"
+          :class="{ 'web-search-mode': useWebSearch }"
         />
-        <button type="submit" :disabled="loading || !input.trim()">Send</button>
+        <button 
+          type="button" 
+          @click="toggleWebSearch" 
+          class="tool-btn"
+          :class="{ active: useWebSearch }"
+          :title="useWebSearch ? 'Disable web search' : 'Enable web search'"
+        >
+          🔍
+        </button>
+        <button type="submit" :disabled="loading || !input.trim()">
+          {{ loading ? (useWebSearch ? 'Searching...' : 'Sending...') : 'Send' }}
+        </button>
       </form>
     </div>
     
@@ -99,7 +123,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { sendChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
+import { sendChat, sendWebSearchChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
 import '../assets/styles/main.scss'
 
@@ -113,6 +137,7 @@ const messagesContainer = ref(null)
 const username = ref('')
 const showDeleteConfirm = ref(false)
 const sessionToDelete = ref(null)
+const useWebSearch = ref(false)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -168,6 +193,11 @@ const createNewSession = () => {
   }
 }
 
+// 切換 web search 模式
+const toggleWebSearch = () => {
+  useWebSearch.value = !useWebSearch.value
+}
+
 // 發送訊息
 const sendMessage = async () => {
   if (!input.value.trim() || loading.value) return
@@ -191,12 +221,23 @@ const sendMessage = async () => {
       updateDisplaySessions()
     }
     
-    const response = await sendChat(userInput, sessionId)
-    messages.value.push({ 
+    // 根據模式選擇不同的API調用
+    const response = useWebSearch.value 
+      ? await sendWebSearchChat(userInput, sessionId)
+      : await sendChat(userInput, sessionId)
+    
+    const botMsg = { 
       role: 'bot', 
       content: response.response, 
       timestamp: new Date().toISOString()
-    })
+    }
+    
+    // 如果有搜索來源，添加到消息中
+    if (response.search_sources && response.search_sources.length > 0) {
+      botMsg.search_sources = response.search_sources
+    }
+    
+    messages.value.push(botMsg)
     
     // 確保會話在列表中（處理後端可能改變 session ID 的情況）
     if (response.session_id && response.session_id !== sessionId) {

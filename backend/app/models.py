@@ -51,4 +51,19 @@ class SessionsResponse(BaseModel):
     """
     Response model for sessions endpoint.
     """
-    sessions: List[str] 
+    sessions: List[str]
+
+class WebSearchRequest(BaseModel):
+    """
+    Request model for web search chat endpoint.
+    """
+    message: str
+    session_id: Optional[str] = None
+
+class WebSearchResponse(BaseModel):
+    """
+    Response model for web search chat endpoint.
+    """
+    response: str
+    session_id: str
+    search_sources: Optional[List[str]] = None 

@@ -59,6 +59,16 @@ services:
     depends_on:
       - mongodb
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./searxng/settings/settings.yml:/etc/searxng/settings.yml
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+
 networks:
   default:
     name: chatnet-chatflow
