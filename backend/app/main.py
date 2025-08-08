@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import logging
@@ -9,8 +9,10 @@ from .auth import AuthService, get_current_user, set_auth_service
 from .models import (
     LoginRequest, LoginResponse, UserResponse,
     ChatRequest, ChatResponse, ChatHistoryItem, ChatHistoryResponse, SessionsResponse,
-    WebSearchRequest, WebSearchResponse
+    WebSearchRequest, WebSearchResponse,
+    RAGIndexResponse, RAGQueryRequest, RAGQueryResponse, RetrievedDoc
 )
+from .services.rag import RAGService
 from datetime import timedelta
 import os
 
@@ -32,6 +34,7 @@ app.add_middleware(
 
 # 全域認證服務實例
 auth_service = None
+rag_service = RAGService()
 
 # 啟動時連接資料庫
 @app.on_event("startup")
@@ -310,3 +313,41 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {"status": "unhealthy", "database": "error", "error": str(e)} 
+
+# ===== RAG APIs =====
+@app.post("/rag/index", response_model=RAGIndexResponse)
+async def rag_index(
+    collection: str = Form(...),
+    user_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+    chunk_size: int = Form(1000),
+    chunk_overlap: int = Form(200),
+):
+    try:
+        import tempfile, shutil, os as _os
+        tmp_paths = []
+        for f in files:
+            suffix = _os.path.splitext(f.filename)[1] or ".pdf"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            with tmp as out:
+                shutil.copyfileobj(f.file, out)
+            tmp_paths.append(tmp.name)
+        result = rag_service.index_pdfs(
+            pdf_paths=tmp_paths,
+            collection_name=collection,
+            user_id=user_id,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        return RAGIndexResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/rag/query", response_model=RAGQueryResponse)
+async def rag_query(req: RAGQueryRequest):
+    try:
+        data = rag_service.rag(req.message, req.collection, req.user_id, limit=req.limit)
+        docs = [RetrievedDoc(**d) for d in data["retrieved_docs"]]
+        return RAGQueryResponse(response=data["response"], retrieved_docs=docs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

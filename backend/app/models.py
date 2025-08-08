@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 class LoginRequest(BaseModel):
     """登入請求模型"""
@@ -52,6 +52,28 @@ class SessionsResponse(BaseModel):
     Response model for sessions endpoint.
     """
     sessions: List[str]
+
+# ===== RAG Models =====
+class RAGIndexResponse(BaseModel):
+    collection: str
+    user_id: str
+    chunks_indexed: int
+    points_upserted: int
+
+class RetrievedDoc(BaseModel):
+    text: str
+    metadata: Dict[str, Any]
+    score: float
+
+class RAGQueryRequest(BaseModel):
+    message: str
+    collection: str
+    user_id: str
+    limit: int = 5
+
+class RAGQueryResponse(BaseModel):
+    response: str
+    retrieved_docs: List[RetrievedDoc]
 
 class WebSearchRequest(BaseModel):
     """

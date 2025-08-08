@@ -47,6 +47,24 @@
     
     <!-- Main Chat Area -->
     <div class="main-content">
+      <!-- RAG Controls -->
+      <div class="rag-controls">
+        <div class="rag-row">
+          <label><input type="checkbox" v-model="useRAG" /> 啟用 RAG</label>
+        </div>
+        <div class="rag-row">
+          <input v-model="ragCollection" placeholder="Collection 名稱 (e.g., shared_rag_collection)" />
+          <input v-model="ragUserId" placeholder="User ID (e.g., user_A)" />
+          <button @click="toggleRagUpload" class="small-btn">{{ showRagUpload ? '隱藏上傳' : '上傳 PDF' }}</button>
+        </div>
+        <div v-if="showRagUpload" class="rag-row">
+          <input type="file" multiple accept="application/pdf" @change="onPdfSelected" />
+          <input v-model.number="ragChunkSize" type="number" min="100" step="100" placeholder="chunk_size (預設 1000)" />
+          <input v-model.number="ragChunkOverlap" type="number" min="0" step="50" placeholder="chunk_overlap (預設 200)" />
+          <button @click="indexSelectedPdfs" :disabled="!canIndex" class="small-btn">建立索引</button>
+          <span v-if="ragIndexing" class="rag-status">索引中...</span>
+        </div>
+      </div>
       <!-- Hidden select for maintaining existing logic -->
       <select v-model="currentSession" @change="loadChatHistory" style="display: none;">
         <option v-for="session in displaySessions" :key="session.value" :value="session.value">
@@ -104,7 +122,7 @@
           <input 
             v-model="input" 
             type="text" 
-            :placeholder="useWebSearch ? 'Search the web and chat...' : 'Type your message...'"
+            :placeholder="useWebSearch ? 'Search the web and chat...' : (useRAG ? 'Ask with RAG...' : 'Type your message...')"
             :disabled="loading"
             :class="{ 'web-search-mode': useWebSearch }"
           />
@@ -153,9 +171,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import { sendChat, sendWebSearchChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
+import { ragIndex, ragQuery } from '../api/rag'
 import '../assets/styles/main.scss'
 
 const input = ref('')
@@ -170,6 +189,16 @@ const showDeleteConfirm = ref(false)
 const sessionToDelete = ref(null)
 const useWebSearch = ref(false)
 const showWebSearchMenu = ref(false)
+// RAG state
+const useRAG = ref(false)
+const ragCollection = ref('shared_rag_collection')
+const ragUserId = ref('user_A')
+const ragFiles = ref([])
+const showRagUpload = ref(false)
+const ragChunkSize = ref(1000)
+const ragChunkOverlap = ref(200)
+const ragIndexing = ref(false)
+const canIndex = computed(() => useRAG.value && ragCollection.value && ragUserId.value && ragFiles.value.length > 0)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -247,6 +276,29 @@ const cancelWebSearch = () => {
   showWebSearchMenu.value = false
 }
 
+// RAG controls
+const toggleRagUpload = () => { showRagUpload.value = !showRagUpload.value }
+const onPdfSelected = (e) => { ragFiles.value = Array.from(e.target.files || []) }
+const indexSelectedPdfs = async () => {
+  if (!canIndex.value) return
+  ragIndexing.value = true
+  try {
+    const res = await ragIndex({
+      collection: ragCollection.value,
+      userId: ragUserId.value,
+      files: ragFiles.value,
+      chunkSize: ragChunkSize.value,
+      chunkOverlap: ragChunkOverlap.value,
+    })
+    alert(`索引完成：${res.points_upserted} points`)
+    ragFiles.value = []
+  } catch (e) {
+    alert(`索引失敗：${e?.message || e}`)
+  } finally {
+    ragIndexing.value = false
+  }
+}
+
 
 // 發送訊息
 const sendMessage = async () => {
@@ -272,9 +324,18 @@ const sendMessage = async () => {
     }
     
     // 根據模式選擇不同的API調用
-    const response = useWebSearch.value 
-      ? await sendWebSearchChat(userInput, sessionId)
-      : await sendChat(userInput, sessionId)
+    let response
+    if (useWebSearch.value) {
+      response = await sendWebSearchChat(userInput, sessionId)
+    } else if (useRAG.value) {
+      if (!ragCollection.value || !ragUserId.value) {
+        throw new Error('請先設定 Collection 與 User ID')
+      }
+      const ragRes = await ragQuery({ message: userInput, collection: ragCollection.value, userId: ragUserId.value, limit: 5 })
+      response = { response: ragRes.response }
+    } else {
+      response = await sendChat(userInput, sessionId)
+    }
     
     const botMsg = { 
       role: 'bot', 
@@ -408,5 +469,12 @@ onMounted(async () => {
   
 })
 </script>
+
+<style scoped>
+.rag-controls { margin-bottom: 10px; }
+.rag-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.small-btn { padding: 6px 10px; font-size: 12px; }
+.rag-status { font-size: 12px; color: #666; }
+</style>
 
  
