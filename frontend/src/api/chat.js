@@ -105,6 +105,21 @@ export async function sendWebSearchChat(message, sessionId = null) {
 }
 
 /**
+ * Send a chat message with spec search functionality to the backend.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @returns {Promise<Object>} - The response from the backend.
+ */
+export async function sendSpecSearchChat(message, sessionId = null) {
+  const payload = { message }
+  if (sessionId) {
+    payload.session_id = sessionId
+  }
+  const res = await api.post('/chat/spec-search', payload)
+  return res.data
+}
+
+/**
  * Health check endpoint.
  * @returns {Promise<Object>} - Health status.
  */

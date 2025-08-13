@@ -66,4 +66,5 @@ class WebSearchResponse(BaseModel):
     """
     response: str
     session_id: str
-    search_sources: Optional[List[str]] = None 
+    search_sources: Optional[List[str]] = None
+

@@ -497,6 +497,64 @@
     }
   }
 
+  // Spec Search 勾選框樣式
+  .spec-search-checkbox {
+    display: flex;
+    align-items: center;
+    margin: 0 $spacing-sm;
+
+    label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: $font-sm;
+      color: $text-secondary;
+      gap: $spacing-xs;
+
+      input[type="checkbox"] {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border: 2px solid $border-light;
+        border-radius: $radius-xs;
+        background: $bg-white;
+        cursor: pointer;
+        transition: all $transition-fast;
+        position: relative;
+
+        &:checked {
+          background: $success-color;
+          border-color: $success-color;
+          
+          &::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+          }
+        }
+
+        &:hover {
+          border-color: $border-focus;
+        }
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+      }
+
+      .checkbox-text {
+        white-space: nowrap;
+        user-select: none;
+      }
+    }
+  }
+
   button[type="submit"] {
     padding: $spacing-sm $spacing-xl;
     border-radius: $radius-md;

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import logging
@@ -229,6 +229,114 @@ Please answer the user's question based on the web search results above. If the 
         )
     except Exception as e:
         logger.error(f"Error in web search chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/spec-search")
+async def spec_search_chat_endpoint(request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    Handles chat with spec search functionality using MongoDB via subprocess.
+    """
+    import subprocess
+    import json as json_lib
+    
+    try:
+        # 手動解析 JSON 請求
+        request_data = await request.json()
+        message = request_data.get("message", "")
+        session_id = request_data.get("session_id") or "default"
+        
+        logger.info(f"Received spec search chat request from {current_user['username']}: {message[:50]}...")
+
+        # 1️⃣ 載入聊天歷史
+        try:
+            history = db_service.get_chat_history(
+                session_id=session_id,
+                username=current_user["username"]
+            )
+            logger.info(f"Loaded {len(history)} historical messages")
+        except Exception as history_error:
+            logger.warning(f"Could not load chat history: {history_error}")
+            history = []
+
+        # 2️⃣ 使用子進程執行 spec search
+        try:
+            logger.info("Performing spec search via subprocess...")
+            
+            # 構建子進程命令
+            script_path = os.path.join(os.path.dirname(__file__), "services", "spec", "standalone_search.py")
+            cmd = [
+                "python", 
+                script_path,
+                "--query", message,
+                "--output-json"
+            ]
+            
+            # 準備環境變數
+            env = os.environ.copy()
+            
+            # 執行子進程
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,  # 60秒超時
+                cwd=os.path.dirname(script_path),
+                env=env  # 傳遞環境變數
+            )
+            
+            if result.returncode == 0:
+                # 記錄完整的 stdout 和 stderr
+                logger.info(f"Subprocess stdout: {result.stdout}")
+                logger.info(f"Subprocess stderr: {result.stderr}")
+                
+                # 解析 JSON 結果
+                try:
+                    output_data = json_lib.loads(result.stdout)
+                    if output_data.get("success"):
+                        spec_result = output_data.get("result", "No result")
+                        logger.info("Spec search completed successfully")
+                    else:
+                        spec_result = f"Spec search failed: {output_data.get('error', 'Unknown error')}"
+                        logger.error(f"Spec search subprocess error: {output_data.get('error')}")
+                except json_lib.JSONDecodeError as e:
+                    spec_result = f"Failed to parse JSON output: {e}. Raw output: {result.stdout}"
+                    logger.error(f"JSON decode error: {e}")
+            else:
+                spec_result = f"Spec search subprocess failed: {result.stderr}"
+                logger.error(f"Subprocess return code: {result.returncode}")
+                logger.error(f"Subprocess stderr: {result.stderr}")
+                logger.error(f"Subprocess stdout: {result.stdout}")
+                
+        except subprocess.TimeoutExpired:
+            spec_result = "Spec search timeout after 60 seconds"
+            logger.error("Spec search subprocess timeout")
+        except Exception as search_error:
+            logger.error(f"Spec search subprocess failed: {search_error}")
+            spec_result = f"Spec search failed: {search_error}"
+
+        # 3️⃣ 如果有歷史記錄，可以結合上下文，或者直接使用 spec search 結果
+        bot_response = spec_result
+        logger.info("Spec search response received, saving to database...")
+
+        # 4️⃣ 儲存對話記錄
+        try:
+            db_service.save_chat_message(
+                user_message=message,
+                bot_response=bot_response,
+                session_id=session_id,
+                username=current_user["username"]
+            )
+            logger.info("Chat message saved to database")
+        except Exception as db_error:
+            logger.error(f"Failed to save chat message: {db_error}")
+        
+        # 返回原生 dict
+        return {
+            "response": bot_response,
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"Error in spec search chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chat/history", response_model=ChatHistoryResponse)

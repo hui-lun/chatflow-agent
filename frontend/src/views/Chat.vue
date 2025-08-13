@@ -132,8 +132,17 @@
             </div>
           </div>
         </div>
+        
+        <!-- Spec Search 勾選框 -->
+        <div class="spec-search-checkbox">
+          <label>
+            <input type="checkbox" v-model="useSpecSearch" :disabled="loading" />
+            <span class="checkbox-text">Spec Search</span>
+          </label>
+        </div>
+        
         <button type="submit" :disabled="loading || !input.trim()">
-          {{ loading ? (useWebSearch ? 'Searching' : 'Sending') : 'Send' }}
+          {{ loading ? (useWebSearch ? 'Searching' : useSpecSearch ? 'Spec Searching' : 'Sending') : 'Send' }}
         </button>
       </form>
     </div>
@@ -154,7 +163,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { sendChat, sendWebSearchChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
+import { sendChat, sendWebSearchChat, sendSpecSearchChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
 import '../assets/styles/main.scss'
 
@@ -170,6 +179,7 @@ const showDeleteConfirm = ref(false)
 const sessionToDelete = ref(null)
 const useWebSearch = ref(false)
 const showWebSearchMenu = ref(false)
+const useSpecSearch = ref(false)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -272,9 +282,14 @@ const sendMessage = async () => {
     }
     
     // 根據模式選擇不同的API調用
-    const response = useWebSearch.value 
-      ? await sendWebSearchChat(userInput, sessionId)
-      : await sendChat(userInput, sessionId)
+    let response
+    if (useSpecSearch.value) {
+      response = await sendSpecSearchChat(userInput, sessionId)
+    } else if (useWebSearch.value) {
+      response = await sendWebSearchChat(userInput, sessionId)
+    } else {
+      response = await sendChat(userInput, sessionId)
+    }
     
     const botMsg = { 
       role: 'bot', 
