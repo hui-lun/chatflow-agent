@@ -13,6 +13,7 @@ from .models import (
 )
 from datetime import timedelta
 import os
+from .services.spec.standalone_search import spec_search
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +48,7 @@ async def startup_event():
         auth_service = AuthService(db_service.client)
         set_auth_service(auth_service)
         logger.info("Auth service initialized")
+            
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         # 不拋出異常，讓應用繼續運行
@@ -234,11 +236,8 @@ Please answer the user's question based on the web search results above. If the 
 @app.post("/chat/spec-search")
 async def spec_search_chat_endpoint(request: Request, current_user: dict = Depends(get_current_user)):
     """
-    Handles chat with spec search functionality using MongoDB via subprocess.
+    Handles chat with spec search functionality using direct function call.
     """
-    import subprocess
-    import json as json_lib
-    
     try:
         # 手動解析 JSON 請求
         request_data = await request.json()
@@ -258,63 +257,16 @@ async def spec_search_chat_endpoint(request: Request, current_user: dict = Depen
             logger.warning(f"Could not load chat history: {history_error}")
             history = []
 
-        # 2️⃣ 使用子進程執行 spec search
+        # 2️⃣ 使用直接函數調用執行搜索
         try:
-            logger.info("Performing spec search via subprocess...")
-            
-            # 構建子進程命令
-            script_path = os.path.join(os.path.dirname(__file__), "services", "spec", "standalone_search.py")
-            cmd = [
-                "python", 
-                script_path,
-                "--query", message,
-                "--output-json"
-            ]
-            
-            # 準備環境變數
-            env = os.environ.copy()
-            
-            # 執行子進程
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,  # 60秒超時
-                cwd=os.path.dirname(script_path),
-                env=env  # 傳遞環境變數
-            )
-            
-            if result.returncode == 0:
-                # 記錄完整的 stdout 和 stderr
-                logger.info(f"Subprocess stdout: {result.stdout}")
-                logger.info(f"Subprocess stderr: {result.stderr}")
-                
-                # 解析 JSON 結果
-                try:
-                    output_data = json_lib.loads(result.stdout)
-                    if output_data.get("success"):
-                        spec_result = output_data.get("result", "No result")
-                        logger.info("Spec search completed successfully")
-                    else:
-                        spec_result = f"Spec search failed: {output_data.get('error', 'Unknown error')}"
-                        logger.error(f"Spec search subprocess error: {output_data.get('error')}")
-                except json_lib.JSONDecodeError as e:
-                    spec_result = f"Failed to parse JSON output: {e}. Raw output: {result.stdout}"
-                    logger.error(f"JSON decode error: {e}")
-            else:
-                spec_result = f"Spec search subprocess failed: {result.stderr}"
-                logger.error(f"Subprocess return code: {result.returncode}")
-                logger.error(f"Subprocess stderr: {result.stderr}")
-                logger.error(f"Subprocess stdout: {result.stdout}")
-                
-        except subprocess.TimeoutExpired:
-            spec_result = "Spec search timeout after 60 seconds"
-            logger.error("Spec search subprocess timeout")
+            logger.info("Performing spec search via direct function call...")
+            spec_result = await spec_search(message)
+            logger.info("Spec search completed successfully")
         except Exception as search_error:
-            logger.error(f"Spec search subprocess failed: {search_error}")
+            logger.error(f"Spec search failed: {search_error}")
             spec_result = f"Spec search failed: {search_error}"
 
-        # 3️⃣ 如果有歷史記錄，可以結合上下文，或者直接使用 spec search 結果
+        # 3️⃣ 使用 spec search 結果作為回應
         bot_response = spec_result
         logger.info("Spec search response received, saving to database...")
 
@@ -417,4 +369,6 @@ def health_check():
         return {"status": "healthy", "database": db_status}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "database": "error", "error": str(e)} 
+        return {"status": "unhealthy", "database": "error", "error": str(e)}
+
+ 
