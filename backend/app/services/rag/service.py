@@ -21,7 +21,6 @@ class RAGService:
     Hybrid RAG over Milvus using dense and sparse vectors with RRF fusion.
     Requires embedding server exposing /hybrid-embed.
     """
-    
     # Default configuration constants
     DEFAULT_CHUNK_SIZE = 1000
     DEFAULT_CHUNK_OVERLAP = 200
