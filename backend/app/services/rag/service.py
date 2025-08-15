@@ -1,105 +1,193 @@
-from __future__ import annotations
-
 import os
 import uuid
-from typing import List, Dict, Any, Optional, Union
 import logging
+import tempfile
+import shutil
+from typing import List, Dict, Any, Optional, TypedDict, Union, Tuple
+from pathlib import Path
+
 import requests
 import scipy.sparse as sp
-from pymilvus import MilvusClient, DataType
+from app.services.llm import get_llm
+from pymilvus import MilvusClient, DataType, CollectionSchema, FieldSchema
 from langchain_community.document_loaders import PyPDFLoader
+from langchain.schema.document import Document
 from langchain.text_splitter import CharacterTextSplitter
 
-from ..llm import get_llm
-
 logger = logging.getLogger(__name__)
-
 
 class RAGService:
     """
     Hybrid RAG over Milvus using dense and sparse vectors with RRF fusion.
     Requires embedding server exposing /hybrid-embed.
     """
-
+    
+    # Default configuration constants
+    DEFAULT_CHUNK_SIZE = 1000
+    DEFAULT_CHUNK_OVERLAP = 200
+    DEFAULT_VECTOR_DIM = 1024
+    DEFAULT_SPARSE_DIM = 262144
+    DEFAULT_SEARCH_LIMIT = 5
+    
+    # Milvus index parameters
+    HNSW_INDEX_PARAMS = {"M": 16, "efConstruction": 256}
+    
     def __init__(
         self,
         embedding_url: Optional[str] = None,
         milvus_uri: Optional[str] = None,
     ) -> None:
-        self.embedding_url = embedding_url or os.getenv("EMBEDDING_API_BASE")
-        self.milvus_client = MilvusClient(uri=milvus_uri or os.getenv("MILVUS_URI", "http://192.168.1.193:19530"))
-        self.sparse_vector_dim = 262144  # Default dimension for sparse vectors
+        """Initialize the RAG service.
+        
+        Args:
+            embedding_url: URL of the embedding service
+            milvus_uri: URI of the Milvus server
+        """
+        self.embedding_url = (embedding_url or os.getenv("EMBEDDING_API_BASE")).rstrip('/')
+        self.milvus_uri = milvus_uri or os.getenv("MILVUS_URI", "http://192.168.1.193:19530")
+        self.milvus_client = MilvusClient(uri=self.milvus_uri)
+        self.sparse_vector_dim = self.DEFAULT_SPARSE_DIM
 
     def get_vectors(self, texts: List[str]) -> Dict[str, Any]:
-        """Get dense and sparse vectors from the embedding service."""
+        """Get dense and sparse vectors from the embedding service.
+        
+        Args:
+            texts: List of text strings to encode
+            
+        Returns:
+            Dict containing 'dense_vectors' and 'sparse_vectors'
+            
+        Raises:
+            HTTPError: If the request to the embedding service fails
+            ValueError: If the response is malformed
+        """
+        if not texts:
+            raise ValueError("No texts provided for vectorization")
+            
+        url = f"{self.embedding_url}/hybrid-embed"
+        logger.debug(f"Requesting vectors for {len(texts)} texts from {url}")
+        
         try:
             resp = requests.post(
-                f"{self.embedding_url}/hybrid-embed",
+                url,
                 json={"texts": texts},
                 timeout=120
             )
             resp.raise_for_status()
             data = resp.json()
-            if not data or "dense_vectors" not in data or "sparse_vectors" not in data:
-                raise RuntimeError("Embedding server did not return both dense_vectors and sparse_vectors")
+            
+            if not isinstance(data, dict):
+                raise ValueError(f"Expected dict response, got {type(data).__name__}")
+                
+            if "dense_vectors" not in data or "sparse_vectors" not in data:
+                raise ValueError("Response missing required vector fields")
+                
+            if len(data["dense_vectors"]) != len(texts) or len(data["sparse_vectors"]) != len(texts):
+                raise ValueError("Number of vectors returned doesn't match number of input texts")
+                
             return data
-        except Exception as e:
-            logger.error(f"Failed to get vectors: {e}")
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request to embedding service failed: {e}")
+            raise
+        except (ValueError, KeyError) as e:
+            logger.error(f"Invalid response from embedding service: {e}")
             raise
 
-    def create_collection(self, collection_name: str, dense_vector_size: int = 1024) -> None:
-        """Create or verify a Milvus collection with proper indexes."""
+    def _create_collection_schema(self, dense_vector_size: int) -> CollectionSchema:
+        """Create a schema for the Milvus collection.
+        
+        Args:
+            dense_vector_size: Dimension of the dense vectors
+            
+        Returns:
+            Configured CollectionSchema
+        """
+        schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=False)
+        
+        # Add fields directly to the schema with proper types and constraints
+        schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+        schema.add_field(field_name="user_id", datatype=DataType.VARCHAR, max_length=256)
+        schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=4000)
+        schema.add_field(field_name="metadata", datatype=DataType.JSON)
+        schema.add_field(field_name="dense_vectors", datatype=DataType.FLOAT_VECTOR, dim=dense_vector_size)
+        schema.add_field(field_name="sparse_vectors", datatype=DataType.SPARSE_FLOAT_VECTOR)
+            
+        return schema
+    
+    def _create_indexes(self, collection_name: str) -> None:
+        """Create necessary indexes for the collection.
+        
+        Args:
+            collection_name: Name of the collection to create indexes for
+        """
+        # Dense vector index
+        dense_index = self.milvus_client.prepare_index_params()
+        dense_index.add_index(
+            field_name="dense_vectors",
+            index_type="HNSW",
+            metric_type="COSINE",
+            params=self.HNSW_INDEX_PARAMS
+        )
+        
+        # Sparse vector index
+        sparse_index = self.milvus_client.prepare_index_params()
+        sparse_index.add_index(
+            field_name="sparse_vectors",
+            index_type="SPARSE_INVERTED_INDEX",
+            metric_type="IP"
+        )
+        
+        # Scalar index for user filtering
+        user_index = self.milvus_client.prepare_index_params()
+        user_index.add_index(
+            field_name="user_id",
+            index_type="INVERTED"
+        )
+        
+        # Create all indexes
+        self.milvus_client.create_index(collection_name, dense_index)
+        self.milvus_client.create_index(collection_name, sparse_index)
+        self.milvus_client.create_index(collection_name, user_index)
+    
+    def create_collection(self, collection_name: str, dense_vector_size: int = None) -> None:
+        """Create or verify a Milvus collection with proper indexes.
+        
+        Args:
+            collection_name: Name of the collection to create or verify
+            dense_vector_size: Dimension of the dense vectors (default: DEFAULT_VECTOR_DIM)
+            
+        Raises:
+            ValueError: If collection name is invalid or vector size is invalid
+            RuntimeError: If collection creation fails
+        """
+        if not collection_name or not isinstance(collection_name, str):
+            raise ValueError("Collection name must be a non-empty string")
+            
+        dense_vector_size = dense_vector_size or self.DEFAULT_VECTOR_DIM
+        
         try:
-            # Define index parameters
-            dense_index_params = self.milvus_client.prepare_index_params()
-            dense_index_params.add_index(
-                field_name="dense_vectors",
-                index_type="HNSW",
-                metric_type="COSINE",
-                params={"M": 16, "efConstruction": 256}
-            )
-            
-            sparse_index_params = self.milvus_client.prepare_index_params()
-            sparse_index_params.add_index(
-                field_name="sparse_vectors",
-                index_type="SPARSE_INVERTED_INDEX",
-                metric_type="IP"
-            )
-            
-            scalar_index_params = self.milvus_client.prepare_index_params()
-            scalar_index_params.add_index(
-                field_name="user_id",
-                index_type="INVERTED"
-            )
-            
-            # Check if collection exists
             if not self.milvus_client.has_collection(collection_name):
-                # Define schema
-                schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=False)
-                schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
-                schema.add_field(field_name="user_id", datatype=DataType.VARCHAR, max_length=256)
-                schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=4000)
-                schema.add_field(field_name="metadata", datatype=DataType.JSON)
-                schema.add_field(field_name="dense_vectors", datatype=DataType.FLOAT_VECTOR, dim=dense_vector_size)
-                schema.add_field(field_name="sparse_vectors", datatype=DataType.SPARSE_FLOAT_VECTOR)
+                logger.info(f"Creating new collection: {collection_name}")
                 
-                # Create collection
+                # Create schema and collection
+                schema = self._create_collection_schema(dense_vector_size)
                 self.milvus_client.create_collection(
                     collection_name=collection_name,
                     schema=schema
                 )
                 
                 # Create indexes
-                self.milvus_client.create_index(collection_name, dense_index_params)
-                self.milvus_client.create_index(collection_name, sparse_index_params)
-                self.milvus_client.create_index(collection_name, scalar_index_params)
+                self._create_indexes(collection_name)
+                logger.info(f"Created collection and indexes for: {collection_name}")
             
-            # Load collection to memory
+            # Ensure collection is loaded
             self.milvus_client.load_collection(collection_name)
             
         except Exception as e:
-            logger.error(f"Failed to create or load collection: {e}")
-            raise
+            error_msg = f"Failed to create/load collection {collection_name}: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _rerank_rrf(self, results_list: List[List[Dict]], k: int = 60) -> List[Dict]:
         """Rerank multiple search results using Reciprocal Rank Fusion (RRF)."""
@@ -137,52 +225,94 @@ class RAGService:
 
         return final_results
 
-    def index_pdfs(
-        self,
-        pdf_paths: List[str],
-        collection_name: str,
-        user_id: str,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
-        dense_vector_size: int = 1024,
-    ) -> Dict[str, Any]:
-        """Index PDF documents into the Milvus collection."""
+    def _process_documents(self, pdf_paths: List[str]) -> List[Document]:
+        """Load and process PDF documents.
+        
+        Args:
+            pdf_paths: List of paths to PDF files
+            
+        Returns:
+            List of processed documents with metadata
+        """
         documents = []
+        
         for path in pdf_paths:
-            loader = PyPDFLoader(path)
-            docs = loader.load()
-            for d in docs:
-                d.metadata.update({
-                    "source": path,
-                    "filename": os.path.basename(path),
-                    "file_type": "pdf"
-                })
-            documents.extend(docs)
-
+            try:
+                if not os.path.exists(path):
+                    logger.warning(f"File not found: {path}")
+                    continue
+                    
+                loader = PyPDFLoader(path)
+                docs = loader.load()
+                
+                # Add file metadata to each document
+                for doc in docs:
+                    doc.metadata.update({
+                        "source": path,
+                        "filename": os.path.basename(path),
+                        "file_type": "pdf"
+                    })
+                    
+                documents.extend(docs)
+                
+            except Exception as e:
+                logger.error(f"Error processing {path}: {e}")
+                continue
+                
+        return documents
+        
+    def _split_documents(self, documents: List[Document], chunk_size: int, chunk_overlap: int) -> List[Document]:
+        """Split documents into chunks.
+        
+        Args:
+            documents: List of documents to split
+            chunk_size: Size of each chunk in characters
+            chunk_overlap: Overlap between chunks in characters
+            
+        Returns:
+            List of split documents
+        """
         if not documents:
-            return {
-                "collection": collection_name,
-                "user_id": user_id,
-                "chunks_indexed": 0,
-                "points_upserted": 0
-            }
-
-        self.create_collection(collection_name, dense_vector_size=dense_vector_size)
+            return []
+            
         splitter = CharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             separator="\n"
         )
-        split_docs = splitter.split_documents(documents)
-        texts = [d.page_content for d in split_docs]
-        metadatas = [d.metadata for d in split_docs]
-
+        
+        return splitter.split_documents(documents)
+        
+    def _prepare_documents_for_indexing(
+        self, 
+        documents: List[Document], 
+        user_id: str
+    ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+        """Prepare documents for indexing by extracting text and metadata.
+        
+        Args:
+            documents: List of documents to prepare
+            user_id: User ID to associate with the documents
+            
+        Returns:
+            Tuple of (entities, texts, metadatas)
+        """
+        if not documents:
+            return [], [], []
+            
+        texts = [d.page_content for d in documents]
+        metadatas = []
+        
+        # Get vectors for all texts in batch
         vecs = self.get_vectors(texts)
         dense_embeddings = vecs["dense_vectors"]
         sparse_embeddings = vecs["sparse_vectors"]
-
-        data_to_insert = []
-        for text, dense_vec, sparse_raw, meta in zip(texts, dense_embeddings, sparse_embeddings, metadatas):
+        
+        # Prepare entities for batch insertion
+        entities = []
+        
+        for i, (text, dense_vec, sparse_raw) in enumerate(zip(texts, dense_embeddings, sparse_embeddings)):
+            # Convert sparse vector to CSR format
             indices = sparse_raw['indices']
             values = sparse_raw['values']
             sparse_vec = sp.csr_matrix(
@@ -190,14 +320,90 @@ class RAGService:
                 shape=(1, self.sparse_vector_dim)
             )
             
-            entity = {
+            # Prepare metadata
+            metadata = documents[i].metadata.copy()
+            metadata["user_id"] = user_id
+            
+            entities.append({
                 "user_id": user_id,
                 "text": text,
-                "metadata": {**meta, "user_id": user_id},
+                "metadata": metadata,
                 "dense_vectors": dense_vec,
                 "sparse_vectors": sparse_vec
+            })
+            
+            metadatas.append(metadata)
+            
+        return entities, texts, metadatas
+        
+    def index_pdfs(
+        self,
+        pdf_paths: List[str],
+        collection_name: str,
+        user_id: str,
+        chunk_size: int = None,
+        chunk_overlap: int = None,
+        dense_vector_size: int = None,
+    ) -> Dict[str, Any]:
+        """Index PDF documents into the Milvus collection.
+        
+        Args:
+            pdf_paths: List of file paths to PDF documents
+            collection_name: Name of the collection to index into
+            user_id: ID of the user who owns these documents
+            chunk_size: Size of text chunks (default: DEFAULT_CHUNK_SIZE)
+            chunk_overlap: Overlap between chunks (default: DEFAULT_CHUNK_OVERLAP)
+            dense_vector_size: Dimension of dense vectors (default: DEFAULT_VECTOR_DIM)
+            
+        Returns:
+            Dictionary with indexing statistics
+            
+        Raises:
+            ValueError: If no valid documents are found
+            RuntimeError: If indexing fails
+        """
+        if not pdf_paths:
+            raise ValueError("No PDF paths provided")
+            
+        chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
+        chunk_overlap = chunk_overlap or self.DEFAULT_CHUNK_OVERLAP
+        dense_vector_size = dense_vector_size or self.DEFAULT_VECTOR_DIM
+        
+        try:
+            # 1. Load and process documents
+            logger.info(f"Processing {len(pdf_paths)} PDF files")
+            documents = self._process_documents(pdf_paths)
+            if not documents:
+                raise ValueError("No valid documents found to process")
+            
+            # 2. Split documents into chunks
+            logger.info(f"Splitting {len(documents)} documents into chunks")
+            split_docs = self._split_documents(documents, chunk_size, chunk_overlap)
+            
+            # 3. Prepare documents for indexing (get vectors, format for Milvus)
+            logger.info(f"Preparing {len(split_docs)} chunks for indexing")
+            entities, texts, metadatas = self._prepare_documents_for_indexing(split_docs, user_id)
+            
+            # 4. Create or get collection
+            self.create_collection(collection_name, dense_vector_size=dense_vector_size)
+            
+            # 5. Insert data into Milvus in batches
+            if entities:
+                self.milvus_client.insert(collection_name, entities)
+                logger.info(f"Inserted {len(entities)} vectors into collection '{collection_name}'")
+            
+            return {
+                "collection": collection_name,
+                "user_id": user_id,
+                "chunks_indexed": len(entities),
+                "points_upserted": len(entities),
+                "documents_processed": len(documents)
             }
-            data_to_insert.append(entity)
+            
+        except Exception as e:
+            error_msg = f"Failed to index PDFs: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
         res = self.milvus_client.insert(
             collection_name=collection_name,
@@ -283,7 +489,7 @@ class RAGService:
             # Return a fallback response
             return "（提示：目前無法連線至文字生成服務，僅返回檢索到的內容摘要。）\n\n" + context[:800]
 
-    def rag(self, query: str, collection_name: str, user_id: str, limit: int = 3) -> Dict[str, Any]:
+    def rag(self, query: str, collection_name: str, user_id: str, limit: int = 5) -> Dict[str, Any]:
         """Complete RAG pipeline: retrieve and generate."""
         try:
             retrieved = self.search(query, collection_name, user_id, limit=limit)

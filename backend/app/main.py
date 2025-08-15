@@ -1,8 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from typing import Optional, List
 import logging
+import tempfile
+import shutil
+import os
+from pathlib import Path
+
 from langchain_core.messages import HumanMessage, AIMessage
+from pydantic import Field
 from .services.llm import get_llm
 from .services.database import db_service
 from .auth import AuthService, get_current_user, set_auth_service
@@ -315,23 +321,64 @@ def health_check():
         return {"status": "unhealthy", "database": "error", "error": str(e)} 
 
 # ===== RAG APIs =====
-@app.post("/rag/index", response_model=RAGIndexResponse)
+@app.post(
+    "/rag/index", 
+    response_model=RAGIndexResponse, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Index PDF documents for RAG",
+    responses={
+        201: {"description": "Documents indexed successfully"},
+        400: {"description": "Invalid input data"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def rag_index(
-    collection: str = Form(...),
-    user_id: str = Form(...),
-    files: list[UploadFile] = File(...),
-    chunk_size: int = Form(1000),
-    chunk_overlap: int = Form(200),
+    collection: str = Form(..., min_length=1, max_length=255),
+    user_id: str = Form(..., min_length=1, max_length=255),
+    files: List[UploadFile] = File(..., description="PDF files to index"),
+    chunk_size: int = Form(1000, gt=100, le=10000),
+    chunk_overlap: int = Form(200, ge=0, le=1000),
 ):
+    """
+    Index PDF documents for Retrieval-Augmented Generation (RAG).
+    
+    This endpoint accepts PDF files, processes them into chunks, generates vector 
+    embeddings, and stores them in the specified collection.
+    
+    Args:
+        collection: Name of the collection to store the vectors
+        user_id: ID of the user who owns these documents
+        files: List of PDF files to process
+        chunk_size: Size of each text chunk (default: 1000)
+        chunk_overlap: Overlap between chunks (default: 200)
+        
+    Returns:
+        RAGIndexResponse with indexing statistics
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one PDF file must be provided"
+        )
+        
+    tmp_paths = []
     try:
-        import tempfile, shutil, os as _os
-        tmp_paths = []
+        # Save uploaded files to temporary location
         for f in files:
-            suffix = _os.path.splitext(f.filename)[1] or ".pdf"
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            with tmp as out:
-                shutil.copyfileobj(f.file, out)
-            tmp_paths.append(tmp.name)
+            if not f.filename or not f.filename.lower().endswith('.pdf'):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid file: '{getattr(f, 'filename', 'unnamed')}'. Only PDF files are supported."
+                )
+                
+            suffix = os.path.splitext(f.filename)[1] or ".pdf"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                shutil.copyfileobj(f.file, tmp)
+                tmp_paths.append(tmp.name)
+                
+        logger.info(f"Processing {len(tmp_paths)} files for collection '{collection}' (user: {user_id})")
+        
+        # Index the documents
         result = rag_service.index_pdfs(
             pdf_paths=tmp_paths,
             collection_name=collection,
@@ -340,14 +387,72 @@ async def rag_index(
             chunk_overlap=chunk_overlap,
         )
         return RAGIndexResponse(**result)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error in RAG index endpoint")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request"
+        )
 
-@app.post("/rag/query", response_model=RAGQueryResponse)
+@app.post(
+    "/rag/query", 
+    response_model=RAGQueryResponse,
+    summary="Query the RAG system"
+)
 async def rag_query(req: RAGQueryRequest):
+    """
+    Query the RAG system with a natural language question.
+    
+    This endpoint retrieves relevant document chunks based on the query and 
+    generates a response using the language model.
+    
+    Args:
+        req: RAGQueryRequest containing the query and parameters
+        
+    Returns:
+        RAGQueryResponse with the generated response and retrieved documents
+    """
     try:
-        data = rag_service.rag(req.message, req.collection, req.user_id, limit=req.limit)
-        docs = [RetrievedDoc(**d) for d in data["retrieved_docs"]]
-        return RAGQueryResponse(response=data["response"], retrieved_docs=docs)
+        logger.info(f"RAG query - Collection: {req.collection}, User: {req.user_id}")
+        
+        # Validate collection exists and is accessible
+        if not rag_service.milvus_client.has_collection(req.collection):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection '{req.collection}' not found"
+            )
+            
+        # Process the query
+        data = rag_service.rag(
+            query=req.message,  # Changed from message= to query=
+            collection_name=req.collection, 
+            user_id=req.user_id, 
+            limit=req.limit
+        )
+        
+        # Convert retrieved docs to response model
+        docs = [RetrievedDoc(**d) for d in data.get("retrieved_docs", [])]
+        
+        logger.info(f"RAG query completed - Retrieved {len(docs)} documents")
+        return RAGQueryResponse(
+            response=data.get("response", ""), 
+            retrieved_docs=docs
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in RAG query: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while processing your query. Please try again later."
+        )
