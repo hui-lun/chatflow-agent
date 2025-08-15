@@ -6,30 +6,16 @@ import json
 import sys
 import argparse
 import logging
-from dotenv import load_dotenv
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-
-# 加載環境變數
-load_dotenv()
+from ..llm import get_llm
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def get_llm():
-    """獲取 LLM 配置"""
-    api_base = os.getenv("VLLM_API_BASE", "http://192.168.1.120:8090/v1")
-    return ChatOpenAI(
-        openai_api_base=api_base,
-        openai_api_key="dummy-key",
-        model_name="gemma-3-27b-it",
-        temperature=0.7,
-    )
 
 async def spec_search(user_query: str) -> str:
     """

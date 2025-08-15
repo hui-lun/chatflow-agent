@@ -66,10 +66,17 @@ docker compose up -d
 
 Required environment variables (create `.env` file):
 ```bash
-VLLM_API_BASE=http://your-vllm-server:8001/v1
+VLLM_API_BASE=http://192.168.1.120:8090/v1
+ 
+# MongoDB root
 MONGO_INITDB_ROOT_USERNAME=admin
-MONGO_INITDB_ROOT_PASSWORD=password123
-MONGO_INITDB_DATABASE=chatflow
+MONGO_INITDB_ROOT_PASSWORD=password
+ 
+# JWT
+SECRET_KEY=e8a1b2b5a3c4d9f7a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4
+ 
+# searXNG
+SEARXNG_SECRET=502081bb13533d7d11666f55dccaba5f2051936adff9918473be33fa18302136
 ```
 
 ## Service URLs
