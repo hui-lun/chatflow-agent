@@ -423,11 +423,8 @@ async def rag_query(req: RAGQueryRequest):
         logger.info(f"RAG query - Collection: {req.collection}, User: {req.user_id}")
         
         # Validate collection exists and is accessible
-        if not rag_service.milvus_client.has_collection(req.collection):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Collection '{req.collection}' not found"
-            )
+        if not rag_service.has_collection(req.collection):
+            raise HTTPException(status_code=404, detail=f"Collection '{req.collection}' not found")
             
         # Process the query
         data = rag_service.rag(
