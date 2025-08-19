@@ -58,11 +58,30 @@
           <button @click="toggleRagUpload" class="small-btn">{{ showRagUpload ? '隱藏上傳' : '上傳 PDF' }}</button>
         </div>
         <div v-if="showRagUpload" class="rag-row">
-          <input type="file" multiple accept="application/pdf" @change="onPdfSelected" />
-          <input v-model.number="ragChunkSize" type="number" min="100" step="100" placeholder="chunk_size (預設 1000)" />
-          <input v-model.number="ragChunkOverlap" type="number" min="0" step="50" placeholder="chunk_overlap (預設 200)" />
-          <button @click="indexSelectedPdfs" :disabled="!canIndex" class="small-btn">建立索引</button>
-          <span v-if="ragIndexing" class="rag-status">索引中...</span>
+          <input 
+            type="file" 
+            multiple 
+            accept="application/pdf" 
+            @change="onPdfSelected"
+            :disabled="ragIndexing" 
+          />
+          <input 
+            v-model.number="ragChunkSize" 
+            type="number" 
+            min="100" 
+            step="100" 
+            placeholder="chunk_size (預設 1000)" 
+            style="display: none;"
+          />
+          <input 
+            v-model.number="ragChunkOverlap" 
+            type="number" 
+            min="0" 
+            step="50" 
+            placeholder="chunk_overlap (預設 200)"
+            style="display: none;"
+          />
+          <span v-if="ragIndexing" class="rag-status">正在建立索引，請稍候...</span>
         </div>
       </div>
       <!-- Hidden select for maintaining existing logic -->
@@ -191,14 +210,14 @@ const useWebSearch = ref(false)
 const showWebSearchMenu = ref(false)
 // RAG state
 const useRAG = ref(false)
+const showRagUpload = ref(false) // 控制上傳面板的顯示/隱藏
 const ragCollection = ref('shared_rag_collection')
 const ragUserId = ref('user_A')
 const ragFiles = ref([])
-const showRagUpload = ref(false)
 const ragChunkSize = ref(1000)
 const ragChunkOverlap = ref(200)
 const ragIndexing = ref(false)
-const canIndex = computed(() => useRAG.value && ragCollection.value && ragUserId.value && ragFiles.value.length > 0)
+const canIndex = computed(() => ragFiles.value.length > 0 && !ragIndexing.value && ragCollection.value && ragUserId.value)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -278,21 +297,49 @@ const cancelWebSearch = () => {
 
 // RAG controls
 const toggleRagUpload = () => { showRagUpload.value = !showRagUpload.value }
-const onPdfSelected = (e) => { ragFiles.value = Array.from(e.target.files || []) }
+
+const onPdfSelected = async (e) => {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) return
+  
+  ragFiles.value = files
+  await indexSelectedPdfs()
+  // 重置 input 值，允許重複選擇相同文件
+  e.target.value = ''
+}
+
 const indexSelectedPdfs = async () => {
-  if (!canIndex.value) return
+  if (!canIndex.value || ragIndexing.value) return
+  
   ragIndexing.value = true
   try {
     const res = await ragIndex({
       collection: ragCollection.value,
       userId: ragUserId.value,
       files: ragFiles.value,
-      chunkSize: ragChunkSize.value,
-      chunkOverlap: ragChunkOverlap.value,
+      // 使用自動分塊，後端會根據文件大小自動調整
+      autoChunk: true
     })
-    alert(`索引完成：${res.points_upserted} points`)
+    
+    // 顯示更詳細的索引結果
+    if (res.details && res.details.length > 0) {
+      const successCount = res.details.filter(d => d.success).length
+      const totalCount = res.details.length
+      const message = totalCount === successCount 
+        ? `成功索引 ${successCount} 個文件`
+        : `完成 ${successCount}/${totalCount} 個文件，${totalCount - successCount} 個失敗`
+      
+      // 顯示詳細的索引結果
+      console.log('索引詳細結果:', res.details)
+      alert(message)
+    } else {
+      // 兼容舊版 API
+      alert(`索引完成：${res.points_upserted || 0} points`)
+    }
+    
     ragFiles.value = []
   } catch (e) {
+    console.error('索引錯誤:', e)
     alert(`索引失敗：${e?.message || e}`)
   } finally {
     ragIndexing.value = false

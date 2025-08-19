@@ -21,6 +21,24 @@ class DocumentProcessor:
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        
+    def _calculate_chunk_size(self, file_size_mb: float) -> tuple[int, int]:
+        """根據文件大小計算合適的 chunk size 和 overlap
+        
+        Args:
+            file_size_mb: 文件大小（MB）
+            
+        Returns:
+            (chunk_size, chunk_overlap) 元組
+        """
+        if file_size_mb < 1:  # 小於1MB
+            return 1000, 200
+        elif file_size_mb < 5:  # 1-5MB
+            return 1500, 300
+        elif file_size_mb < 10:  # 5-10MB
+            return 2000, 400
+        else:  # 大於10MB
+            return 3000, 500
     
     def process_documents(self, pdf_paths: List[str]) -> List[Document]:
         """加載並處理 PDF 文檔

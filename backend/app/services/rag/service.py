@@ -63,6 +63,7 @@ class RAGService:
         chunk_size: int = None,
         chunk_overlap: int = None,
         dense_vector_size: int = None,
+        auto_chunk: bool = True
     ) -> Dict[str, Any]:
         """將 PDF 文檔索引到 Milvus 集合中
         
@@ -70,9 +71,10 @@ class RAGService:
             pdf_paths: PDF 文件路徑列表
             collection_name: 目標集合名稱
             user_id: 文檔所屬用戶的 ID
-            chunk_size: 文本塊大小 (預設: DEFAULT_CHUNK_SIZE)
-            chunk_overlap: 塊之間的重疊字符數 (預設: DEFAULT_CHUNK_OVERLAP)
+            chunk_size: 文本塊大小 (預設: 根據文件大小自動計算)
+            chunk_overlap: 塊之間的重疊字符數 (預設: 根據文件大小自動計算)
             dense_vector_size: 密集向量的維度 (預設: DEFAULT_VECTOR_DIM)
+            auto_chunk: 是否根據文件大小自動調整 chunk 參數
             
         Returns:
             包含索引統計信息的字典
@@ -84,37 +86,90 @@ class RAGService:
         if not pdf_paths:
             raise ValueError("未提供 PDF 文件路徑")
             
-        # 更新文檔處理器的配置
-        self.document_processor.chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
-        self.document_processor.chunk_overlap = chunk_overlap or self.DEFAULT_CHUNK_OVERLAP
+        # 確保集合存在
         dense_vector_size = dense_vector_size or self.DEFAULT_VECTOR_DIM
+        self.create_collection(collection_name, dense_vector_size)
+        
+        results = {
+            "collection": collection_name,
+            "user_id": user_id,
+            "documents_processed": 0,
+            "chunks_indexed": 0,
+            "points_upserted": 0,
+            "files": []
+        }
         
         try:
-            # 1. 加載並處理文檔
-            logger.info(f"正在處理 {len(pdf_paths)} 個 PDF 文件")
-            documents = self.document_processor.process_documents(pdf_paths)
-            if not documents:
-                raise ValueError("未找到有效文檔進行處理")
+            for pdf_path in pdf_paths:
+                try:
+                    # 獲取文件大小 (MB)
+                    file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+                    
+                    # 如果啟用自動分塊，則根據文件大小計算合適的參數
+                    if auto_chunk:
+                        chunk_size, chunk_overlap = self.document_processor._calculate_chunk_size(file_size_mb)
+                    else:
+                        chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
+                        chunk_overlap = chunk_overlap or self.DEFAULT_CHUNK_OVERLAP
+                    
+                    # 更新文檔處理器的配置
+                    self.document_processor.chunk_size = chunk_size
+                    self.document_processor.chunk_overlap = chunk_overlap
+                    
+                    logger.info(f"處理文件: {pdf_path} (大小: {file_size_mb:.2f}MB, chunk_size: {chunk_size}, overlap: {chunk_overlap})")
+                    
+                    # 1. 加載並處理文檔
+                    documents = self.document_processor.process_documents([pdf_path])
+                    if not documents:
+                        logger.warning(f"未找到有效文檔: {pdf_path}")
+                        continue
+                    
+                    # 2. 分割文檔為塊
+                    split_docs = self.document_processor.split_documents(documents)
+                    if not split_docs:
+                        logger.warning(f"文檔分割後為空: {pdf_path}")
+                        continue
+                    
+                    # 3. 準備文檔以進行索引
+                    entities, texts, metadatas = self.document_processor.prepare_for_indexing(
+                        split_docs, 
+                        user_id,
+                        self.vector_service
+                    )
+                    
+                    if not entities:
+                        logger.warning(f"未生成有效的嵌入向量: {pdf_path}")
+                        continue
+                    
+                    # 4. 批量插入數據到 Milvus
+                    points_upserted = self.milvus_service.insert_documents(collection_name, entities)
+                    
+                    # 更新結果
+                    file_result = {
+                        "filename": os.path.basename(pdf_path),
+                        "size_mb": round(file_size_mb, 2),
+                        "chunks_indexed": len(entities),
+                        "points_upserted": points_upserted,
+                        "chunk_size": chunk_size,
+                        "chunk_overlap": chunk_overlap
+                    }
+                    
+                    results["files"].append(file_result)
+                    results["documents_processed"] += 1
+                    results["chunks_indexed"] += len(entities)
+                    results["points_upserted"] += points_upserted
+                    
+                    logger.info(f"已處理 {len(entities)} 個塊 (共 {points_upserted} 個點)")
+                    
+                except Exception as e:
+                    logger.error(f"處理文件 {pdf_path} 時出錯: {e}", exc_info=True)
+                    continue
             
-            # 2. 分割文檔為塊
-            logger.info(f"將 {len(documents)} 個文檔分割成塊")
-            split_docs = self.document_processor.split_documents(documents)
-            
-            # 3. 準備文檔以進行索引（獲取向量，格式化為 Milvus 格式）
-            logger.info(f"準備 {len(split_docs)} 個塊進行索引")
-            entities, texts, metadatas = self.document_processor.prepare_for_indexing(
-                split_docs, 
-                user_id,
-                self.vector_service
-            )
-            
-            # 4. 創建或獲取集合
-            self.create_collection(collection_name, dense_vector_size)
-            
-            # 5. 批量插入數據到 Milvus
-            if entities:
-                points_upserted = self.milvus_service.insert_documents(collection_name, entities)
-                logger.info(f"已將 {points_upserted} 個向量插入到集合 '{collection_name}'")
+            if results["documents_processed"] == 0:
+                raise ValueError("沒有成功處理任何文檔")
+                
+            logger.info(f"索引完成: 共處理 {results['documents_processed']} 個文檔, {results['chunks_indexed']} 個塊")
+            return results
             
             return {
                 "collection": collection_name,
