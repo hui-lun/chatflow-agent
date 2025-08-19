@@ -1,4 +1,5 @@
 # CLAUDE.md
+- **請用繁體中文回覆**
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -134,3 +135,29 @@ The application uses JWT token authentication:
 - MongoDB connection includes auto-retry logic and graceful error handling
 - Chat history is limited to 50 messages by default to prevent performance issues
 - CORS is configured for localhost:3000 and container networking
+
+### MongoDB
+ 
+- **database: spec**  
+  - collection: `spec-all`  
+  - Example fields:
+    - `"ProjectModel"`: `R283-Z90-AAD1-000`  
+    - `"gbtSn"`: `6NR283Z90DR000AAD1`  
+ 
+---
+ 
+- **database: QVL**  
+  - Collection naming rule: `ProjectModel` + `gbtSn`  
+  - Difference:  
+    - `ProjectModel` prefix: `R283-Z90-AAD1`  
+    - `gbtSn`: `6NR283Z90DR000AAD16`  
+    - Note: The **last digit (e.g., the trailing 6)** in the QVL collection name does not exist in `spec` and **can be ignored** when mapping.  
+ 
+  - Example:  
+    ```
+    R283-Z90-AAD1-6NR283Z90DR000AAD16
+    ```
+    → In mapping, treat it as:  
+    ```
+    R283-Z90-AAD1-6NR283Z90DR000AAD1
+    ```

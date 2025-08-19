@@ -1,7 +1,11 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from typing import Optional
 import logging
+import os
+import tempfile
+import json
 from langchain_core.messages import HumanMessage, AIMessage
 from .services.llm import get_llm
 from .services.database import db_service
@@ -282,11 +286,38 @@ async def spec_search_chat_endpoint(request: Request, current_user: dict = Depen
         except Exception as db_error:
             logger.error(f"Failed to save chat message: {db_error}")
         
-        # 返回原生 dict
-        return {
+        # 檢查回應是否包含 QVL 資訊，並生成下載連結
+        qvl_downloads = []
+        if "QVL 資料查詢結果" in bot_response:
+            try:
+                # 從 user query 中提取型號
+                import re
+                model_pattern = r'[A-Z]\d{3}-[A-Z]\d{2}-[A-Z]{3}\d'
+                user_models = re.findall(model_pattern, message)
+                
+                if user_models:
+                    project_model = user_models[0]
+                    matching_collections = db_service.find_matching_qvl_collections(project_model)
+                    
+                    for collection_name in matching_collections:
+                        qvl_downloads.append({
+                            "collection_name": collection_name,
+                            "download_url": f"/download/qvl/{collection_name}.txt"
+                        })
+                        
+            except Exception as e:
+                logger.error(f"生成 QVL 下載連結時發生錯誤: {e}")
+        
+        # 返回原生 dict，包含 QVL 下載連結
+        response_data = {
             "response": bot_response,
             "session_id": session_id
         }
+        
+        if qvl_downloads:
+            response_data["qvl_downloads"] = qvl_downloads
+            
+        return response_data
     except Exception as e:
         logger.error(f"Error in spec search chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -370,5 +401,55 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {"status": "unhealthy", "database": "error", "error": str(e)}
+
+@app.get("/download/qvl/{collection_name}")
+async def download_qvl_file(collection_name: str, current_user: dict = Depends(get_current_user)):
+    """
+    下載指定 QVL collection 的資料為 TXT 檔案
+    """
+    try:
+        # 移除可能的 .txt 後綴
+        if collection_name.endswith('.txt'):
+            collection_name = collection_name[:-4]
+        
+        logger.info(f"Downloading QVL collection: {collection_name} for user: {current_user['username']}")
+        
+        # 獲取 QVL 資料
+        qvl_data = db_service.get_qvl_data(collection_name)
+        
+        if not qvl_data:
+            raise HTTPException(status_code=404, detail=f"QVL collection '{collection_name}' not found or empty")
+        
+        # 創建臨時檔案
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as temp_file:
+            # 將資料寫入檔案
+            temp_file.write(f"QVL 資料 - Collection: {collection_name}\n")
+            temp_file.write("=" * 50 + "\n\n")
+            
+            for i, item in enumerate(qvl_data, 1):
+                temp_file.write(f"項目 {i}:\n")
+                temp_file.write(json.dumps(item, ensure_ascii=False, indent=2))
+                temp_file.write("\n" + "-" * 30 + "\n\n")
+            
+            temp_file_path = temp_file.name
+        
+        # 設定檔案名稱
+        filename = f"{collection_name}.txt"
+        
+        # 回傳檔案
+        return FileResponse(
+            path=temp_file_path,
+            filename=filename,
+            media_type='text/plain',
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading QVL file {collection_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download QVL file: {str(e)}")
 
  

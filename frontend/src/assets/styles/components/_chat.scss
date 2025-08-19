@@ -310,6 +310,52 @@
         }
       }
     }
+
+    // QVL Downloads styles
+    .qvl-downloads {
+      margin-top: $spacing-sm;
+      padding: $spacing-sm;
+      background: rgba(82, 196, 26, 0.1);
+      border-radius: $radius-sm;
+      border-left: 3px solid $success-color;
+
+      .downloads-label {
+        font-size: $font-xs;
+        color: $text-secondary;
+        font-weight: $font-medium;
+        margin-bottom: $spacing-xs;
+      }
+
+      .downloads-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: $spacing-xs;
+      }
+
+      .download-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: $success-color;
+        color: $text-white;
+        border: none;
+        border-radius: $radius-xs;
+        font-size: $font-xs;
+        cursor: pointer;
+        transition: all $transition-fast;
+        text-decoration: none;
+
+        &:hover {
+          background: $success-hover;
+          transform: translateY(-1px);
+        }
+
+        &:active {
+          transform: translateY(0);
+        }
+      }
+    }
   }
 }
 

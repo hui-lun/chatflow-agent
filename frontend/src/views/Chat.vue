@@ -78,6 +78,17 @@
               </a>
             </div>
           </div>
+          <div v-if="msg.qvl_downloads && msg.qvl_downloads.length > 0" class="qvl-downloads">
+            <div class="downloads-label">📁 QVL 資料下載:</div>
+            <div class="downloads-list">
+              <button v-for="(download, downloadIdx) in msg.qvl_downloads" 
+                      :key="downloadIdx" 
+                      @click="downloadQVL(download.collection_name)"
+                      class="download-btn">
+                📥 {{ download.collection_name }}.txt
+              </button>
+            </div>
+          </div>
         </div>
         <div v-if="loading" class="chat-message bot loading">
           <div class="message-content">Thinking...</div>
@@ -163,7 +174,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { sendChat, sendWebSearchChat, sendSpecSearchChat, getChatHistory, getAllSessions, deleteSession } from '../api/chat'
+import { sendChat, sendWebSearchChat, sendSpecSearchChat, getChatHistory, getAllSessions, deleteSession, downloadQVLFile } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
 import '../assets/styles/main.scss'
 
@@ -302,6 +313,11 @@ const sendMessage = async () => {
       botMsg.search_sources = response.search_sources
     }
     
+    // 如果有 QVL 下載連結，添加到消息中
+    if (response.qvl_downloads && response.qvl_downloads.length > 0) {
+      botMsg.qvl_downloads = response.qvl_downloads
+    }
+    
     messages.value.push(botMsg)
     
     // 確保會話在列表中（處理後端可能改變 session ID 的情況）
@@ -391,6 +407,31 @@ const executeDelete = async () => {
     console.error('Failed to delete session:', error)
     alert('刪除對話失敗，請稍後再試')
     cancelDelete()
+  }
+}
+
+// QVL 檔案下載處理
+const downloadQVL = async (collectionName) => {
+  try {
+    console.log(`Downloading QVL file: ${collectionName}`)
+    
+    // 調用 API 下載檔案
+    const blob = await downloadQVLFile(collectionName)
+    
+    // 創建下載連結
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${collectionName}.txt`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+    console.log(`QVL file ${collectionName}.txt downloaded successfully`)
+  } catch (error) {
+    console.error('Failed to download QVL file:', error)
+    alert(`下載 QVL 檔案失敗: ${error.message}`)
   }
 }
 

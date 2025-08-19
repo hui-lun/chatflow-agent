@@ -149,6 +149,58 @@ class DatabaseService:
         except Exception as e:
             print(f"Failed to delete session {session_id}: {e}")
             raise
+    
+    def get_qvl_collections(self) -> List[str]:
+        """獲取 QVL 資料庫中所有 collection 名稱"""
+        if not self.client:
+            raise RuntimeError("Database not connected")
+        
+        try:
+            qvl_db = self.client["QVL"]
+            collections = qvl_db.list_collection_names()
+            return collections
+        except Exception as e:
+            print(f"Failed to get QVL collections: {e}")
+            raise
+    
+    def get_qvl_data(self, collection_name: str) -> List[dict]:
+        """取得指定 QVL collection 的所有資料"""
+        if not self.client:
+            raise RuntimeError("Database not connected")
+        
+        try:
+            qvl_db = self.client["QVL"]
+            collection = qvl_db[collection_name]
+            # 排除 _id 欄位，取得所有資料
+            data = list(collection.find({}, {"_id": 0}))
+            return data
+        except Exception as e:
+            print(f"Failed to get QVL data from collection {collection_name}: {e}")
+            raise
+    
+    def find_matching_qvl_collections(self, project_model: str) -> List[str]:
+        """根據 ProjectModel 找到相關的 QVL collections
+        
+        Args:
+            project_model: 例如 "R283-Z90-AAD1"
+            
+        Returns:
+            List[str]: 所有以該 project_model 開頭的 collection 名稱
+        """
+        if not self.client:
+            raise RuntimeError("Database not connected")
+        
+        try:
+            all_collections = self.get_qvl_collections()
+            # 找到所有以 project_model 開頭的 collections
+            matching_collections = [
+                col for col in all_collections 
+                if col.startswith(project_model)
+            ]
+            return matching_collections
+        except Exception as e:
+            print(f"Failed to find matching QVL collections for {project_model}: {e}")
+            raise
 
 # 全域資料庫服務實例
 db_service = DatabaseService() 

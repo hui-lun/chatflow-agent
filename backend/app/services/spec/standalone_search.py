@@ -12,6 +12,7 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from ..llm import get_llm
+from ..database import db_service
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -80,10 +81,68 @@ async def spec_search(user_query: str) -> str:
                 # Return the final AI response
                 final_response = result.get("messages")[-1].content
                 logger.info(f"Final response: {final_response[:200]}...")
+                
+                # 檢查是否找到完整機器型號，並查詢 QVL 資料
+                qvl_info = await check_and_get_qvl_data(final_response, user_query)
+                
+                # 如果有 QVL 資料，附加到回應中
+                if qvl_info:
+                    final_response += f"\n\n{qvl_info}"
+                
                 return final_response
                 
     except Exception as e:
         return f"Spec search error: {str(e)}"
+
+async def check_and_get_qvl_data(spec_response: str, user_query: str) -> str:
+    """
+    檢查 spec 搜尋回應中是否包含完整機器型號，並查詢對應的 QVL 資料
+    
+    Args:
+        spec_response: spec 搜尋的回應內容
+        user_query: 使用者的原始查詢
+        
+    Returns:
+        str: QVL 查詢結果的描述，如果沒有找到則回傳空字串
+    """
+    try:
+        import re
+        
+        # 從用戶查詢中提取型號模式 (例如 R283-Z90-AAD1)
+        # 匹配格式：字母數字-字母數字-字母數字
+        model_pattern = r'[A-Z]\d{3}-[A-Z]\d{2}-[A-Z]{3}\d'
+        user_models = re.findall(model_pattern, user_query)
+        
+        if not user_models:
+            logger.info("未在用戶查詢中找到完整機器型號格式")
+            return ""
+        
+        project_model = user_models[0]  # 取第一個找到的型號
+        logger.info(f"找到機器型號: {project_model}")
+        
+        # 查詢 QVL 相關 collections
+        matching_collections = db_service.find_matching_qvl_collections(project_model)
+        
+        if not matching_collections:
+            logger.info(f"未找到與 {project_model} 相關的 QVL collections")
+            return ""
+        
+        logger.info(f"找到 {len(matching_collections)} 個相關的 QVL collections: {matching_collections}")
+        
+        # 組成 QVL 資訊回應
+        qvl_response = f"🔍 QVL 資料查詢結果：\n\n"
+        qvl_response += f"為機器型號 {project_model} 找到 {len(matching_collections)} 個相關的 QVL 資料庫：\n"
+        
+        for i, collection_name in enumerate(matching_collections, 1):
+            qvl_response += f"{i}. {collection_name}\n"
+        
+        qvl_response += f"\n📁 您可以下載這些 QVL 資料檔案。"
+        
+        return qvl_response
+        
+    except Exception as e:
+        logger.error(f"檢查和獲取 QVL 資料時發生錯誤: {e}")
+        return f"QVL 查詢過程中發生錯誤: {str(e)}"
 
 async def main():
     """主函數"""

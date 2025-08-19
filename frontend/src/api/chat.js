@@ -120,6 +120,18 @@ export async function sendSpecSearchChat(message, sessionId = null) {
 }
 
 /**
+ * Download QVL file from the backend.
+ * @param {string} collectionName - The QVL collection name.
+ * @returns {Promise<Blob>} - The file blob for download.
+ */
+export async function downloadQVLFile(collectionName) {
+  const res = await api.get(`/download/qvl/${collectionName}`, {
+    responseType: 'blob'
+  })
+  return res.data
+}
+
+/**
  * Health check endpoint.
  * @returns {Promise<Object>} - Health status.
  */
