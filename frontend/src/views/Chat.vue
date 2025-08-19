@@ -206,6 +206,9 @@ const loadChatHistory = async () => {
       { role: 'user', content: item.user_message, timestamp: item.timestamp },
       { role: 'bot', content: item.bot_response, timestamp: item.timestamp }
     ]).flat()
+    
+    // 確保 DOM 更新後再滾動到底部
+    await nextTick()
     scrollToBottom()
   } catch (error) {
     console.error('Failed to load chat history:', error)
@@ -359,7 +362,10 @@ const sendMessage = async () => {
 // 滾動到底部
 const scrollToBottom = () => {
   if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    // 添加小延遲確保渲染完成
+    setTimeout(() => {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    }, 10)
   }
 }
 
@@ -371,10 +377,10 @@ const formatTimestamp = (timestamp) => {
 }
 
 // 切換會話
-const switchSession = (sessionId) => {
+const switchSession = async (sessionId) => {
   if (currentSession.value !== sessionId) {
     currentSession.value = sessionId
-    loadChatHistory()
+    await loadChatHistory()
   }
 }
 
