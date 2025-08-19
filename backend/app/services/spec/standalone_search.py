@@ -108,9 +108,9 @@ async def check_and_get_qvl_data(spec_response: str, user_query: str) -> str:
     try:
         import re
         
-        # 從用戶查詢中提取型號模式 (例如 R283-Z90-AAD1)
-        # 匹配格式：字母數字-字母數字-字母數字
-        model_pattern = r'[A-Z]\d{3}-[A-Z]\d{2}-[A-Z]{3}\d'
+        # 從用戶查詢中提取型號模式 (例如 R283-Z90-AAD1, R163-SG2-AAC1)
+        # 匹配格式：字母+3位數字-字母數字組合(3位)-3個字母+1位數字
+        model_pattern = r'[A-Z]\d{3}-[A-Z0-9]{3}-[A-Z]{3}\d'
         user_models = re.findall(model_pattern, user_query)
         
         if not user_models:

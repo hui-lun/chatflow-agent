@@ -292,7 +292,7 @@ async def spec_search_chat_endpoint(request: Request, current_user: dict = Depen
             try:
                 # 從 user query 中提取型號
                 import re
-                model_pattern = r'[A-Z]\d{3}-[A-Z]\d{2}-[A-Z]{3}\d'
+                model_pattern = r'[A-Z]\d{3}-[A-Z0-9]{3}-[A-Z]{3}\d'
                 user_models = re.findall(model_pattern, message)
                 
                 if user_models:
