@@ -147,7 +147,7 @@
         <!-- Spec Search 勾選框 -->
         <div class="spec-search-checkbox">
           <label>
-            <input type="checkbox" v-model="useSpecSearch" :disabled="loading" />
+            <input type="checkbox" v-model="useSpecSearch" @change="toggleSpecSearch" :disabled="loading" />
             <span class="checkbox-text">Spec Search</span>
           </label>
         </div>
@@ -239,9 +239,9 @@ const createNewSession = () => {
   const newSessionId = `session_${Date.now()}`
   currentSession.value = newSessionId
   messages.value = []
-  // 立即更新顯示列表包含新會話
+  // 立即更新顯示列表包含新會話（添加到頂部）
   if (!sessions.value.includes(newSessionId)) {
-    sessions.value.push(newSessionId)
+    sessions.value.unshift(newSessionId)
     updateDisplaySessions()
   }
 }
@@ -249,6 +249,12 @@ const createNewSession = () => {
 // 切換 web search 模式
 const toggleWebSearch = () => {
   useWebSearch.value = !useWebSearch.value
+  
+  // 如果啟用 Web Search，則禁用 Spec Search（互斥邏輯）
+  if (useWebSearch.value) {
+    useSpecSearch.value = false
+  }
+  
   showWebSearchMenu.value = false // 選擇後關閉選單
 }
 
@@ -266,6 +272,15 @@ const closeWebSearchMenu = () => {
 const cancelWebSearch = () => {
   useWebSearch.value = false
   showWebSearchMenu.value = false
+}
+
+// 切換 spec search 模式
+const toggleSpecSearch = () => {
+  // v-model 已經自動更新了 useSpecSearch.value
+  // 只需要處理互斥邏輯
+  if (useSpecSearch.value) {
+    useWebSearch.value = false
+  }
 }
 
 
@@ -287,8 +302,8 @@ const sendMessage = async () => {
       sessionId = `session_${Date.now()}`
       currentSession.value = sessionId
       
-      // 將新會話加入列表
-      sessions.value.push(sessionId)
+      // 將新會話加入列表頂部
+      sessions.value.unshift(sessionId)
       updateDisplaySessions()
     }
     
@@ -324,7 +339,7 @@ const sendMessage = async () => {
     if (response.session_id && response.session_id !== sessionId) {
       currentSession.value = response.session_id
       if (!sessions.value.includes(response.session_id)) {
-        sessions.value.push(response.session_id)
+        sessions.value.unshift(response.session_id)
         updateDisplaySessions()
       }
     }
