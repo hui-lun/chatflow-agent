@@ -356,11 +356,61 @@
         }
       }
     }
+
+    // Retrieved Documents Styles for RAG
+    .retrieved-docs {
+      margin-top: $spacing-sm;
+      padding: $spacing-sm;
+      background: rgba(40, 167, 69, 0.1);
+      border-radius: $radius-sm;
+      border-left: 3px solid #28a745;
+
+      .docs-label {
+        font-size: $font-xs;
+        color: #28a745;
+        font-weight: $font-semibold;
+        margin-bottom: $spacing-sm;
+      }
+
+      .docs-list {
+        display: flex;
+        flex-direction: column;
+        gap: $spacing-sm;
+      }
+
+      .doc-item {
+        background: $bg-white;
+        padding: $spacing-sm;
+        border-radius: $radius-xs;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+
+        .doc-score {
+          font-size: $font-xs;
+          color: #6c757d;
+          font-weight: $font-semibold;
+          margin-bottom: $spacing-xs;
+        }
+
+        .doc-text {
+          color: $text-primary;
+          line-height: 1.5;
+          margin-bottom: $spacing-xs;
+          font-size: $font-sm;
+        }
+
+        .doc-metadata {
+          font-size: $font-xs;
+          color: $text-muted;
+          font-style: italic;
+        }
+      }
+    }
   }
 }
 
 .chat-input {
-  padding: $spacing-lg $spacing-xl;
+  padding: $spacing-md $spacing-lg;
   border-top: 1px solid $border-light;
   background: $bg-light;
   display: flex;
@@ -426,7 +476,7 @@
 
     input {
       width: 100%;
-      padding: $spacing-sm $spacing-md;
+      padding: $spacing-md $spacing-md;
       padding-right: 45px; // 為加號按鈕留空間
       border-radius: $radius-md;
       border: 1px solid #d9d9d9;
@@ -451,8 +501,67 @@
         padding-left: $spacing-md; // 恢復正常左側間距
         padding-right: 150px; // 為標籤、取消按鈕和加號按鈕留足空間
       }
+
+      &.rag-mode {
+        border-color: #28a745;
+        box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.1);
+        padding-left: $spacing-md; // 恢復正常左側間距
+        padding-right: 150px; // 為標籤、取消按鈕和加號按鈕留足空間
+      }
     }
 
+    // RAG 標籤樣式 - 統一與 Web Search 樣式
+    .rag-tag {
+      position: absolute;
+      right: 70px; // 在按鈕組左側
+      top: 50%;
+      transform: translateY(-50%);
+      background: #28a745;
+      color: white;
+      padding: 2px 6px 2px 6px;
+      padding-right: 20px; // 為取消按鈕留空間
+      border-radius: $radius-xs;
+      font-size: 11px;
+      font-weight: $font-medium;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      z-index: 1;
+
+      .tag-icon {
+        font-size: 10px;
+      }
+
+      .tag-text {
+        white-space: nowrap;
+      }
+
+      .tag-cancel-btn {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        color: #28a745;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all $transition-fast;
+        z-index: 2;
+
+        &:hover {
+          background: white;
+          color: #ff4d4f;
+          transform: scale(1.1);
+        }
+      }
+    }
 
     .plus-btn {
       position: absolute;
@@ -602,7 +711,7 @@
   }
 
   button[type="submit"] {
-    padding: $spacing-sm $spacing-xl;
+    padding: $spacing-sm $spacing-md;
     border-radius: $radius-md;
     border: none;
     background: $border-focus;

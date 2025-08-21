@@ -68,6 +68,9 @@ docker compose up -d
 Required environment variables (create `.env` file):
 ```bash
 VLLM_API_BASE=http://192.168.1.120:8090/v1
+
+# Embedding model
+EMBEDDING_API_BASE=http://192.168.1.120:8070
  
 # MongoDB root
 MONGO_INITDB_ROOT_USERNAME=admin

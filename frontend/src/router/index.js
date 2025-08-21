@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '../api/auth'
 import Login from '../views/Login.vue'
 import Chat from '../views/Chat.vue'
+import KnowledgeBase from '../views/KnowledgeBase.vue'
 
 const routes = [
   {
@@ -18,6 +19,12 @@ const routes = [
     path: '/chat',
     name: 'Chat',
     component: Chat,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/kb',
+    name: 'KnowledgeBase',
+    component: KnowledgeBase,
     meta: { requiresAuth: true }
   }
 ]

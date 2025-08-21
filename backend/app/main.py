@@ -1,11 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from typing import Optional
+from typing import Optional, List
 import logging
 import os
 import tempfile
 import json
+import uuid
+from datetime import datetime, timedelta
+from pathlib import Path
 from langchain_core.messages import HumanMessage, AIMessage
 from .services.llm import get_llm
 from .services.database import db_service
@@ -13,11 +16,11 @@ from .auth import AuthService, get_current_user, set_auth_service
 from .models import (
     LoginRequest, LoginResponse, UserResponse,
     ChatRequest, ChatResponse, ChatHistoryItem, ChatHistoryResponse, SessionsResponse,
-    WebSearchRequest, WebSearchResponse
+    WebSearchRequest, WebSearchResponse,
+    FileUploadResponse, FileInfo, FileListResponse, RAGChatRequest, RAGChatResponse
 )
-from datetime import timedelta
-import os
 from .services.spec.standalone_search import spec_search
+from .services.rag.service import RAGService
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +41,13 @@ app.add_middleware(
 # 全域認證服務實例
 auth_service = None
 
+# 全域RAG服務實例
+rag_service = None
+
+# KB檔案上傳目錄
+UPLOAD_DIR = Path("kb_uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 # 啟動時連接資料庫
 @app.on_event("startup")
 async def startup_event():
@@ -52,6 +62,11 @@ async def startup_event():
         auth_service = AuthService(db_service.client)
         set_auth_service(auth_service)
         logger.info("Auth service initialized")
+        
+        # 初始化RAG服務
+        global rag_service
+        rag_service = RAGService()
+        logger.info("RAG service initialized")
             
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
@@ -452,4 +467,237 @@ async def download_qvl_file(collection_name: str, current_user: dict = Depends(g
         logger.error(f"Error downloading QVL file {collection_name}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to download QVL file: {str(e)}")
 
+# Knowledge Base相關endpoints
+@app.post("/kb/upload", response_model=FileUploadResponse)
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    上傳PDF檔案到使用者的知識庫
+    """
+    try:
+        # 檢查檔案類型
+        if not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="僅支援PDF檔案")
+        
+        if file.size > 50 * 1024 * 1024:  # 50MB限制
+            raise HTTPException(status_code=400, detail="檔案大小不能超過50MB")
+        
+        # 生成唯一檔案ID
+        file_id = str(uuid.uuid4())
+        username = current_user["username"]
+        
+        # 保存檔案到本地
+        user_upload_dir = UPLOAD_DIR / username
+        user_upload_dir.mkdir(exist_ok=True)
+        
+        file_path = user_upload_dir / f"{file_id}_{file.filename}"
+        
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # 獲取使用者專屬collection名稱
+        collection_name = RAGService.get_user_collection_name(username)
+        
+        # 處理PDF並索引到向量資料庫
+        try:
+            result = rag_service.index_pdfs(
+                pdf_paths=[str(file_path)],
+                collection_name=collection_name,
+                user_id=username
+            )
+            
+            # 儲存檔案元資料到MongoDB
+            file_metadata = {
+                "file_id": file_id,
+                "filename": file.filename,
+                "file_size": file.size,
+                "file_path": str(file_path),
+                "username": username,
+                "uploaded_at": datetime.now(),
+                "status": "processed",
+                "chunks_count": result.get("chunks_indexed", 0)
+            }
+            
+            db_service.client.chatbot.kb_files.insert_one(file_metadata)
+            
+            return FileUploadResponse(
+                file_id=file_id,
+                filename=file.filename,
+                file_size=file.size,
+                status="processed",
+                message=f"檔案已成功處理，共產生 {result.get('chunks_indexed', 0)} 個文本塊"
+            )
+            
+        except Exception as e:
+            logger.error(f"PDF處理失敗: {e}")
+            # 清理已上傳的檔案
+            if file_path.exists():
+                file_path.unlink()
+            raise HTTPException(status_code=500, detail=f"檔案處理失敗: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"檔案上傳錯誤: {e}")
+        raise HTTPException(status_code=500, detail=f"檔案上傳失敗: {str(e)}")
+
+@app.get("/kb/files", response_model=FileListResponse)
+async def get_files(current_user: dict = Depends(get_current_user)):
+    """
+    取得使用者的檔案列表
+    """
+    try:
+        username = current_user["username"]
+        
+        # 從MongoDB獲取檔案列表
+        files_cursor = db_service.client.chatbot.kb_files.find(
+            {"username": username}
+        ).sort("uploaded_at", -1)
+        
+        files = []
+        for file_doc in files_cursor:
+            files.append(FileInfo(
+                file_id=file_doc["file_id"],
+                filename=file_doc["filename"],
+                file_size=file_doc["file_size"],
+                uploaded_at=file_doc["uploaded_at"].isoformat(),
+                status=file_doc["status"],
+                chunks_count=file_doc.get("chunks_count")
+            ))
+        
+        return FileListResponse(files=files)
+        
+    except Exception as e:
+        logger.error(f"取得檔案列表失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/kb/files/{file_id}")
+async def delete_file(file_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    刪除使用者的檔案
+    """
+    try:
+        username = current_user["username"]
+        
+        # 從MongoDB查找檔案
+        file_doc = db_service.client.chatbot.kb_files.find_one({
+            "file_id": file_id,
+            "username": username
+        })
+        
+        if not file_doc:
+            raise HTTPException(status_code=404, detail="檔案不存在")
+        
+        # 刪除本地檔案
+        file_path = Path(file_doc["file_path"])
+        if file_path.exists():
+            file_path.unlink()
+        
+        # TODO: 從Milvus中刪除對應的向量數據
+        # 這需要實作一個根據檔案名稱刪除特定文檔的功能
+        
+        # 從MongoDB刪除檔案記錄
+        db_service.client.chatbot.kb_files.delete_one({
+            "file_id": file_id,
+            "username": username
+        })
+        
+        return {"message": "檔案已刪除", "file_id": file_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"刪除檔案失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/rag", response_model=RAGChatResponse)
+async def rag_chat_endpoint(request: RAGChatRequest, current_user: dict = Depends(get_current_user)):
+    """
+    RAG聊天端點：基於使用者知識庫進行對話
+    """
+    try:
+        username = current_user["username"]
+        session_id = request.session_id or "default"
+        
+        logger.info(f"Received RAG chat request from {username}: {request.message[:50]}...")
+        
+        # 檢查使用者是否有上傳的檔案
+        file_count = db_service.client.chatbot.kb_files.count_documents({
+            "username": username,
+            "status": "processed"
+        })
+        
+        if file_count == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="尚未上傳任何檔案到知識庫，請先到 /kb 頁面上傳PDF檔案"
+            )
+        
+        # 獲取使用者專屬collection名稱
+        collection_name = RAGService.get_user_collection_name(username)
+        
+        # 檢查collection是否存在
+        if not rag_service.has_collection(collection_name):
+            raise HTTPException(
+                status_code=400,
+                detail="知識庫尚未初始化，請重新上傳檔案"
+            )
+        
+        # 載入聊天歷史
+        try:
+            history = db_service.get_chat_history(
+                session_id=session_id,
+                username=username
+            )
+            logger.info(f"Loaded {len(history)} historical messages")
+        except Exception as history_error:
+            logger.warning(f"Could not load chat history: {history_error}")
+            history = []
+        
+        # 執行RAG檢索和生成
+        try:
+            logger.info("Performing RAG retrieval and generation...")
+            rag_result = rag_service.rag(
+                query=request.message,
+                collection_name=collection_name,
+                user_id=username,
+                limit=5
+            )
+            
+            bot_response = rag_result["response"]
+            retrieved_docs = rag_result.get("retrieved_docs", [])
+            
+            logger.info(f"RAG completed with {len(retrieved_docs)} retrieved documents")
+            
+        except Exception as rag_error:
+            logger.error(f"RAG processing failed: {rag_error}")
+            bot_response = f"抱歉，處理您的問題時發生錯誤：{str(rag_error)}"
+            retrieved_docs = []
+        
+        # 儲存對話記錄
+        try:
+            db_service.save_chat_message(
+                user_message=request.message,
+                bot_response=bot_response,
+                session_id=session_id,
+                username=username
+            )
+            logger.info("RAG chat message saved to database")
+        except Exception as db_error:
+            logger.error(f"Failed to save RAG chat message: {db_error}")
+        
+        return RAGChatResponse(
+            response=bot_response,
+            session_id=session_id,
+            retrieved_docs=retrieved_docs
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in RAG chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
  

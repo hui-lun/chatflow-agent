@@ -138,4 +138,55 @@ export async function downloadQVLFile(collectionName) {
 export async function healthCheck() {
   const res = await api.get('/health')
   return res.data
+}
+
+/**
+ * Upload a PDF file to the knowledge base.
+ * @param {File} file - The PDF file to upload.
+ * @returns {Promise<Object>} - The upload response from the backend.
+ */
+export async function uploadFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  
+  const res = await api.post('/kb/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+  return res.data
+}
+
+/**
+ * Get the list of uploaded files in the knowledge base.
+ * @returns {Promise<Object>} - The files list response from the backend.
+ */
+export async function getFiles() {
+  const res = await api.get('/kb/files')
+  return res.data
+}
+
+/**
+ * Delete a file from the knowledge base.
+ * @param {string} fileId - The ID of the file to delete.
+ * @returns {Promise<Object>} - The deletion response from the backend.
+ */
+export async function deleteFile(fileId) {
+  const res = await api.delete(`/kb/files/${fileId}`)
+  return res.data
+}
+
+/**
+ * Send a RAG chat message to the backend.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @returns {Promise<Object>} - The response from the backend with retrieved documents.
+ */
+export async function sendRAGChat(message, sessionId = null) {
+  const payload = { message }
+  if (sessionId) {
+    payload.session_id = sessionId
+  }
+  const res = await api.post('/chat/rag', payload)
+  return res.data
 } 

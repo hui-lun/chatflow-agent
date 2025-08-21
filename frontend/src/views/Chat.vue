@@ -1,5 +1,25 @@
 <template>
   <div class="app-layout">
+    <!-- Navigation Bar -->
+    <div class="nav-bar">
+      <div class="nav-tabs">
+        <router-link to="/chat" class="nav-tab active">
+          <span class="nav-icon">💬</span>
+          對話
+        </router-link>
+        <router-link to="/kb" class="nav-tab">
+          <span class="nav-icon">📚</span>
+          知識庫
+        </router-link>
+      </div>
+      <div class="user-info-nav">
+        <span>{{ username }}</span>
+        <button @click="handleLogout" class="logout-btn">登出</button>
+      </div>
+    </div>
+    
+    <!-- Content Wrapper -->
+    <div class="content-wrapper">
     <!-- Left Sidebar -->
     <div class="sidebar">
       <div class="sidebar-header">
@@ -37,11 +57,6 @@
             🗑️
           </button>
         </div>
-      </div>
-      
-      <div class="sidebar-footer">
-        <div class="user-info">{{ username }}</div>
-        <button @click="handleLogout" class="logout-btn">登出</button>
       </div>
     </div>
     
@@ -89,6 +104,20 @@
               </button>
             </div>
           </div>
+          <div v-if="msg.retrieved_docs && msg.retrieved_docs.length > 0" class="retrieved-docs">
+            <div class="docs-label">📚 檢索到的相關文檔:</div>
+            <div class="docs-list">
+              <div v-for="(doc, docIdx) in msg.retrieved_docs" 
+                   :key="docIdx" 
+                   class="doc-item">
+                <div class="doc-score">相關度: {{ (doc.score * 100).toFixed(1) }}%</div>
+                <div class="doc-text">{{ doc.text.substring(0, 200) }}{{ doc.text.length > 200 ? '...' : '' }}</div>
+                <div v-if="doc.metadata" class="doc-metadata">
+                  來源: {{ doc.metadata.filename || '未知' }}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div v-if="loading" class="chat-message bot loading">
           <div class="message-content">Thinking...</div>
@@ -112,12 +141,27 @@
             </button>
           </div>
           
+          <!-- RAG 標籤 -->
+          <div v-if="useRAG" class="rag-tag">
+            <span class="tag-icon">📚</span>
+            <span class="tag-text">RAG 對話</span>
+            <!-- 取消 RAG 按鈕 -->
+            <button 
+              type="button" 
+              @click="cancelRAG" 
+              class="tag-cancel-btn"
+              title="Cancel RAG chat"
+            >
+              ×
+            </button>
+          </div>
+          
           <input 
             v-model="input" 
             type="text" 
-            :placeholder="useWebSearch ? 'Search the web and chat...' : 'Type your message...'"
+            :placeholder="getInputPlaceholder()"
             :disabled="loading"
-            :class="{ 'web-search-mode': useWebSearch }"
+            :class="{ 'web-search-mode': useWebSearch, 'rag-mode': useRAG }"
           />
           
           <!-- 加號按鈕 -->
@@ -141,6 +185,11 @@
               <span class="dropdown-text">Web Search</span>
               <span v-if="useWebSearch" class="dropdown-check">✓</span>
             </div>
+            <div class="dropdown-item" @click="toggleRAGChat">
+              <span class="dropdown-icon">📚</span>
+              <span class="dropdown-text">RAG 對話</span>
+              <span v-if="useRAG" class="dropdown-check">✓</span>
+            </div>
           </div>
         </div>
         
@@ -153,7 +202,7 @@
         </div>
         
         <button type="submit" :disabled="loading || !input.trim()">
-          {{ loading ? (useWebSearch ? 'Searching' : useSpecSearch ? 'Spec Searching' : 'Sending') : 'Send' }}
+          {{ getSendButtonText() }}
         </button>
       </form>
     </div>
@@ -169,12 +218,13 @@
         </div>
       </div>
     </div>
+    </div> <!-- Close content-wrapper -->
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { sendChat, sendWebSearchChat, sendSpecSearchChat, getChatHistory, getAllSessions, deleteSession, downloadQVLFile } from '../api/chat'
+import { sendChat, sendWebSearchChat, sendSpecSearchChat, sendRAGChat, getChatHistory, getAllSessions, deleteSession, downloadQVLFile } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
 import '../assets/styles/main.scss'
 
@@ -191,6 +241,7 @@ const sessionToDelete = ref(null)
 const useWebSearch = ref(false)
 const showWebSearchMenu = ref(false)
 const useSpecSearch = ref(false)
+const useRAG = ref(false)
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -253,9 +304,10 @@ const createNewSession = () => {
 const toggleWebSearch = () => {
   useWebSearch.value = !useWebSearch.value
   
-  // 如果啟用 Web Search，則禁用 Spec Search（互斥邏輯）
+  // 如果啟用 Web Search，則禁用其他模式（互斥邏輯）
   if (useWebSearch.value) {
     useSpecSearch.value = false
+    useRAG.value = false
   }
   
   showWebSearchMenu.value = false // 選擇後關閉選單
@@ -283,7 +335,45 @@ const toggleSpecSearch = () => {
   // 只需要處理互斥邏輯
   if (useSpecSearch.value) {
     useWebSearch.value = false
+    useRAG.value = false
   }
+}
+
+// 切換 RAG 模式
+const toggleRAGChat = () => {
+  useRAG.value = !useRAG.value
+  
+  // 如果啟用 RAG，則禁用其他模式（互斥邏輯）
+  if (useRAG.value) {
+    useWebSearch.value = false
+    useSpecSearch.value = false
+  }
+  
+  showWebSearchMenu.value = false // 選擇後關閉選單
+}
+
+// 取消 RAG 模式
+const cancelRAG = () => {
+  useRAG.value = false
+  showWebSearchMenu.value = false
+}
+
+// 取得輸入框 placeholder
+const getInputPlaceholder = () => {
+  if (useRAG.value) return '基於您的知識庫進行智能問答...'
+  if (useWebSearch.value) return 'Search the web and chat...'
+  return 'Type your message...'
+}
+
+// 取得發送按鈕文字
+const getSendButtonText = () => {
+  if (loading.value) {
+    if (useRAG.value) return 'RAG 處理中'
+    if (useWebSearch.value) return 'Searching'
+    if (useSpecSearch.value) return 'Spec Searching'
+    return 'Sending'
+  }
+  return 'Send'
 }
 
 
@@ -312,7 +402,9 @@ const sendMessage = async () => {
     
     // 根據模式選擇不同的API調用
     let response
-    if (useSpecSearch.value) {
+    if (useRAG.value) {
+      response = await sendRAGChat(userInput, sessionId)
+    } else if (useSpecSearch.value) {
       response = await sendSpecSearchChat(userInput, sessionId)
     } else if (useWebSearch.value) {
       response = await sendWebSearchChat(userInput, sessionId)
@@ -334,6 +426,11 @@ const sendMessage = async () => {
     // 如果有 QVL 下載連結，添加到消息中
     if (response.qvl_downloads && response.qvl_downloads.length > 0) {
       botMsg.qvl_downloads = response.qvl_downloads
+    }
+    
+    // 如果有RAG檢索的文檔，添加到消息中
+    if (response.retrieved_docs && response.retrieved_docs.length > 0) {
+      botMsg.retrieved_docs = response.retrieved_docs
     }
     
     messages.value.push(botMsg)
@@ -486,4 +583,156 @@ onMounted(async () => {
 })
 </script>
 
- 
+<style scoped>
+/* Navigation Bar */
+.nav-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  text-decoration: none;
+  color: #666;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.nav-tab:hover, .nav-tab.active {
+  background: #007bff;
+  color: white;
+}
+
+.nav-icon {
+  font-size: 1.2rem;
+}
+
+.user-info-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.logout-btn {
+  padding: 0.5rem 1rem;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  font-weight: 500;
+}
+
+.logout-btn:hover {
+  background: #c82333;
+}
+
+/* Content Wrapper */
+.content-wrapper {
+  display: flex;
+  flex: 1;
+  height: calc(100vh - 80px); /* Account for nav-bar height */
+  overflow: hidden;
+}
+
+/* App Layout Update */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f5f5f5;
+}
+
+
+/* Update existing sidebar to work with content-wrapper */
+.sidebar {
+  width: 300px;
+  background: white;
+  border-right: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Update main-content to work with content-wrapper */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f8f9fa;
+}
+
+/* Ensure proper height for chat messages */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Chat input stays at bottom */
+.chat-input {
+  padding: 1rem;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nav-bar {
+    padding: 0.75rem 1rem;
+  }
+  
+  .nav-tabs {
+    gap: 0.25rem;
+  }
+  
+  .nav-tab {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .content-wrapper {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  
+  .retrieved-docs {
+    padding: 0.75rem;
+  }
+  
+  .doc-item {
+    padding: 0.75rem;
+  }
+}
+</style> 

@@ -68,3 +68,36 @@ class WebSearchResponse(BaseModel):
     session_id: str
     search_sources: Optional[List[str]] = None
 
+# Knowledge Base相關模型
+class FileUploadResponse(BaseModel):
+    """檔案上傳回應模型"""
+    file_id: str
+    filename: str
+    file_size: int
+    status: str
+    message: str
+
+class FileInfo(BaseModel):
+    """檔案資訊模型"""
+    file_id: str
+    filename: str
+    file_size: int
+    uploaded_at: str
+    status: str
+    chunks_count: Optional[int] = None
+
+class FileListResponse(BaseModel):
+    """檔案列表回應模型"""
+    files: List[FileInfo]
+
+class RAGChatRequest(BaseModel):
+    """RAG聊天請求模型"""
+    message: str
+    session_id: Optional[str] = None
+
+class RAGChatResponse(BaseModel):
+    """RAG聊天回應模型"""
+    response: str
+    session_id: str
+    retrieved_docs: Optional[List[dict]] = None
+
