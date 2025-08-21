@@ -410,11 +410,12 @@
 }
 
 .chat-input {
-  padding: $spacing-md $spacing-lg;
+  padding: $spacing-lg $spacing-xl; // 增加容器padding
   border-top: 1px solid $border-light;
   background: $bg-light;
   display: flex;
-  gap: $spacing-sm;
+  gap: $spacing-md; // input、checkbox和button之間的間距
+  align-items: center; // 垂直居中對齊
 
   .input-wrapper {
     flex: 1;
@@ -424,19 +425,19 @@
 
     .web-search-tag {
       position: absolute;
-      right: 70px; // 在按鈕組左側
+      right: 76px; // 在按鈕組左側，配合新的加號按鈕大小
       top: 50%;
       transform: translateY(-50%);
       background: #52c41a;
       color: white;
-      padding: 2px 6px 2px 6px;
-      padding-right: 20px; // 為取消按鈕留空間
+      padding: 4px 8px 4px 8px; // 稍微增加padding
+      padding-right: 22px; // 為取消按鈕留空間
       border-radius: $radius-xs;
-      font-size: 11px;
+      font-size: 12px; // 稍微增加字體大小
       font-weight: $font-medium;
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 4px; // 稍微增加間距
       z-index: 1;
 
       .tag-icon {
@@ -476,12 +477,13 @@
 
     input {
       width: 100%;
-      padding: $spacing-md $spacing-md;
-      padding-right: 45px; // 為加號按鈕留空間
+      padding: $spacing-lg $spacing-lg; // 增加高度從 16px 到 20px
+      padding-right: 50px; // 為加號按鈕留空間，稍微增加
       border-radius: $radius-md;
       border: 1px solid #d9d9d9;
-      font-size: $font-base;
+      font-size: $font-md; // 增加字體大小從 14px 到 16px
       transition: border-color $transition-normal;
+      min-height: 48px; // 設定最小高度確保舒適的點擊區域
 
       &:focus {
         outline: none;
@@ -498,14 +500,14 @@
       &.web-search-mode {
         border-color: #52c41a;
         box-shadow: 0 0 0 2px rgba(82, 196, 26, 0.2);
-        padding-left: $spacing-md; // 恢復正常左側間距
+        padding-left: $spacing-lg; // 保持與正常狀態一致
         padding-right: 150px; // 為標籤、取消按鈕和加號按鈕留足空間
       }
 
       &.rag-mode {
         border-color: #28a745;
         box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.1);
-        padding-left: $spacing-md; // 恢復正常左側間距
+        padding-left: $spacing-lg; // 保持與正常狀態一致
         padding-right: 150px; // 為標籤、取消按鈕和加號按鈕留足空間
       }
     }
@@ -513,19 +515,19 @@
     // RAG 標籤樣式 - 統一與 Web Search 樣式
     .rag-tag {
       position: absolute;
-      right: 70px; // 在按鈕組左側
+      right: 76px; // 在按鈕組左側，配合新的加號按鈕大小
       top: 50%;
       transform: translateY(-50%);
       background: #28a745;
       color: white;
-      padding: 2px 6px 2px 6px;
-      padding-right: 20px; // 為取消按鈕留空間
+      padding: 4px 8px 4px 8px; // 稍微增加padding
+      padding-right: 22px; // 為取消按鈕留空間
       border-radius: $radius-xs;
-      font-size: 11px;
+      font-size: 12px; // 稍微增加字體大小
       font-weight: $font-medium;
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 4px; // 稍微增加間距
       z-index: 1;
 
       .tag-icon {
@@ -565,11 +567,11 @@
 
     .plus-btn {
       position: absolute;
-      right: 8px;
+      right: 10px; // 稍微增加右邊距
       top: 50%;
       transform: translateY(-50%);
-      width: 32px;
-      height: 32px;
+      width: 36px; // 稍微增加按鈕大小
+      height: 36px;
       border-radius: 50%;
       border: none;
       background: $bg-white;
@@ -652,24 +654,28 @@
     }
   }
 
-  // Spec Search 勾選框樣式
+  // Spec Search 勾選框樣式 - 在send按鈕左邊
   .spec-search-checkbox {
     display: flex;
     align-items: center;
-    margin: 0 $spacing-sm;
+    justify-content: center; // 居中對齊
+    margin: 0; // 移除margin，由parent gap控制間距
+    padding: 0 $spacing-sm; // 添加左右padding
+    white-space: nowrap; // 防止文字換行
 
     label {
       display: flex;
       align-items: center;
       cursor: pointer;
-      font-size: $font-sm;
-      color: $text-secondary;
-      gap: $spacing-xs;
+      font-size: $font-base; // 稍微增加字體大小
+      color: $text-primary; // 改為主要文字顏色，提高可讀性
+      gap: $spacing-sm; // 稍微增加間距
+      font-weight: $font-medium; // 添加字重
 
       input[type="checkbox"] {
         appearance: none;
-        width: 16px;
-        height: 16px;
+        width: 18px; // 稍微增加尺寸
+        height: 18px;
         border: 2px solid $border-light;
         border-radius: $radius-xs;
         background: $bg-white;
@@ -711,15 +717,19 @@
   }
 
   button[type="submit"] {
-    padding: $spacing-sm $spacing-md;
+    padding: $spacing-lg $spacing-xl; // 增加padding從 12px 16px 到 20px 24px
     border-radius: $radius-md;
     border: none;
     background: $border-focus;
     color: $text-white;
     cursor: pointer;
-    font-size: $font-base;
+    font-size: $font-md; // 增加字體大小從 14px 到 16px
     font-weight: $font-medium;
     transition: background-color $transition-normal;
+    min-height: 48px; // 與input保持一致的高度
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     &:hover:not(:disabled) {
       background: #096dd9;
@@ -848,10 +858,41 @@
 
   .chat-input {
     padding: $spacing-md $spacing-lg;
-    flex-direction: column;
+    flex-direction: column; // 移動端改為垂直布局
+    gap: $spacing-sm; // 減小間距
 
-    input, button {
-      width: 100%;
+    .input-wrapper {
+      order: 1; // input在上方
+    }
+
+    // 將checkbox和button組成一個水平容器
+    .spec-search-checkbox {
+      order: 2; // checkbox在中間
+      padding: 0; // 移動端移除padding
+      justify-content: flex-start; // 靠左對齊
+      margin-bottom: $spacing-xs; // 與button保持間距
+      
+      label {
+        font-size: $font-sm; // 在移動端使用較小字體
+        gap: $spacing-xs; // 減小間距
+      }
+      
+      input[type="checkbox"] {
+        width: 16px; // 在移動端稍微減小
+        height: 16px;
+      }
+    }
+
+    button[type="submit"] {
+      order: 3; // button在下方
+      padding: $spacing-md $spacing-lg; // 在移動端稍微減小button
+      font-size: $font-base; // 調整字體大小
+      min-height: 44px; // 適合移動端的最小觸摸區域
+      width: 100%; // 移動端button占滿寬度
+    }
+
+    input {
+      font-size: $font-base; // 在移動端保持較小的字體
     }
   }
 

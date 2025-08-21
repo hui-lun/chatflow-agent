@@ -193,7 +193,7 @@
           </div>
         </div>
         
-        <!-- Spec Search 勾選框 -->
+        <!-- Spec Search 勾選框 - 在send按鈕左邊 -->
         <div class="spec-search-checkbox">
           <label>
             <input type="checkbox" v-model="useSpecSearch" @change="toggleSpecSearch" :disabled="loading" />
@@ -697,8 +697,8 @@ onMounted(async () => {
   background: white;
   border-top: 1px solid #e0e0e0;
   display: flex;
-  flex-direction: column;
   gap: 1rem;
+  align-items: center;
 }
 
 /* Responsive adjustments */
