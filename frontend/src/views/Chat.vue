@@ -104,7 +104,7 @@
               </button>
             </div>
           </div>
-          <div v-if="msg.retrieved_docs && msg.retrieved_docs.length > 0" class="retrieved-docs">
+          <!-- <div v-if="msg.retrieved_docs && msg.retrieved_docs.length > 0" class="retrieved-docs">
             <div class="docs-label">📚 檢索到的相關文檔:</div>
             <div class="docs-list">
               <div v-for="(doc, docIdx) in msg.retrieved_docs" 
@@ -117,7 +117,7 @@
                 </div>
               </div>
             </div>
-          </div>
+          </div> -->
         </div>
         <div v-if="loading" class="chat-message bot loading">
           <div class="message-content">Thinking...</div>
