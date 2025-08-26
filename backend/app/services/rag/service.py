@@ -77,7 +77,8 @@ class RAGService:
         chunk_size: int = None,
         chunk_overlap: int = None,
         dense_vector_size: int = None,
-        auto_chunk: bool = True
+        auto_chunk: bool = True,
+        file_id: str = None
     ) -> Dict[str, Any]:
         """將 PDF 文檔索引到 Milvus 集合中
         
@@ -148,7 +149,8 @@ class RAGService:
                     entities, texts, metadatas = self.document_processor.prepare_for_indexing(
                         split_docs, 
                         user_id,
-                        self.vector_service
+                        self.vector_service,
+                        file_id
                     )
                     
                     if not entities:

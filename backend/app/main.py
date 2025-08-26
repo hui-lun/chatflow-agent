@@ -506,7 +506,8 @@ async def upload_file(
             result = rag_service.index_pdfs(
                 pdf_paths=[str(file_path)],
                 collection_name=collection_name,
-                user_id=username
+                user_id=username,
+                file_id=file_id
             )
             
             # 儲存檔案元資料到MongoDB
@@ -521,7 +522,7 @@ async def upload_file(
                 "chunks_count": result.get("chunks_indexed", 0)
             }
             
-            db_service.client.chatbot.kb_files.insert_one(file_metadata)
+            db_service.client.KB.kb_files.insert_one(file_metadata)
             
             return FileUploadResponse(
                 file_id=file_id,
@@ -553,7 +554,7 @@ async def get_files(current_user: dict = Depends(get_current_user)):
         username = current_user["username"]
         
         # 從MongoDB獲取檔案列表
-        files_cursor = db_service.client.chatbot.kb_files.find(
+        files_cursor = db_service.client.KB.kb_files.find(
             {"username": username}
         ).sort("uploaded_at", -1)
         
@@ -583,7 +584,7 @@ async def delete_file(file_id: str, current_user: dict = Depends(get_current_use
         username = current_user["username"]
         
         # 從MongoDB查找檔案
-        file_doc = db_service.client.chatbot.kb_files.find_one({
+        file_doc = db_service.client.KB.kb_files.find_one({
             "file_id": file_id,
             "username": username
         })
@@ -596,11 +597,28 @@ async def delete_file(file_id: str, current_user: dict = Depends(get_current_use
         if file_path.exists():
             file_path.unlink()
         
-        # TODO: 從Milvus中刪除對應的向量數據
-        # 這需要實作一個根據檔案名稱刪除特定文檔的功能
+        # 從Milvus中刪除對應的向量數據
+        try:
+            # 取得使用者專屬的 collection 名稱
+            collection_name = RAGService.get_user_collection_name(username)
+            
+            # 初始化 RAG 服務並刪除向量數據
+            rag_service = RAGService()
+            if rag_service.has_collection(collection_name):
+                deleted_count = rag_service.milvus_service.delete_by_file_id(
+                    collection_name=collection_name,
+                    file_id=file_id,
+                    user_id=username
+                )
+                logger.info(f"已從 Milvus 刪除 {deleted_count} 個向量片段")
+            else:
+                logger.warning(f"Milvus 集合 {collection_name} 不存在，跳過向量刪除")
+        except Exception as e:
+            # 即使 Milvus 刪除失敗，也不影響其他刪除操作
+            logger.error(f"從 Milvus 刪除向量數據失敗: {e}")
         
         # 從MongoDB刪除檔案記錄
-        db_service.client.chatbot.kb_files.delete_one({
+        db_service.client.KB.kb_files.delete_one({
             "file_id": file_id,
             "username": username
         })
@@ -625,7 +643,7 @@ async def rag_chat_endpoint(request: RAGChatRequest, current_user: dict = Depend
         logger.info(f"Received RAG chat request from {username}: {request.message[:50]}...")
         
         # 檢查使用者是否有上傳的檔案
-        file_count = db_service.client.chatbot.kb_files.count_documents({
+        file_count = db_service.client.KB.kb_files.count_documents({
             "username": username,
             "status": "processed"
         })

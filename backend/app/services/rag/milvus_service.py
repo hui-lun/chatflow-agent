@@ -251,3 +251,63 @@ class MilvusService:
             })
 
         return final_results
+    
+    def delete_by_file_id(self, collection_name: str, file_id: str, user_id: str) -> int:
+        """根據文件 ID 刪除 Milvus 中的所有相關向量數據
+        
+        Args:
+            collection_name: 集合名稱
+            file_id: 要刪除的文件 ID
+            user_id: 用戶 ID 用於過濾
+            
+        Returns:
+            刪除的向量數量
+            
+        Raises:
+            RuntimeError: 當刪除操作失敗時
+        """
+        if not collection_name or not file_id or not user_id:
+            raise ValueError("集合名稱、文件 ID 和用戶 ID 都不能為空")
+        
+        try:
+            # 檢查集合是否存在
+            if not self.has_collection(collection_name):
+                logger.warning(f"集合 {collection_name} 不存在，跳過刪除操作")
+                return 0
+            
+            # 構建過濾條件：根據 metadata 中的 file_id 和 user_id 進行過濾
+            filter_expr = f'user_id == "{user_id}" && metadata["file_id"] == "{file_id}"'
+            logger.info(f"使用過濾條件: {filter_expr}")
+            
+            # 先查詢匹配的記錄數量
+            try:
+                query_result = self.milvus_client.query(
+                    collection_name=collection_name,
+                    filter=filter_expr,
+                    output_fields=["id", "metadata"],
+                    limit=10
+                )
+                logger.info(f"找到 {len(query_result)} 個匹配的記錄")
+                if query_result:
+                    logger.debug(f"第一個匹配記錄的 metadata: {query_result[0].get('metadata', {})}")
+            except Exception as e:
+                logger.warning(f"查詢匹配記錄時出錯: {e}")
+            
+            # 執行刪除操作
+            delete_result = self.milvus_client.delete(
+                collection_name=collection_name,
+                filter=filter_expr
+            )
+            
+            # 刷新集合以確保刪除操作生效
+            self.milvus_client.flush(collection_name=collection_name)
+            
+            deleted_count = delete_result.get('delete_count', 0)
+            logger.info(f"從 {collection_name} 集合中刪除了 {deleted_count} 個向量 (file_id: {file_id}, user_id: {user_id})")
+            
+            return deleted_count
+            
+        except Exception as e:
+            error_msg = f"從 {collection_name} 刪除文件 {file_id} 的向量數據失敗: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e

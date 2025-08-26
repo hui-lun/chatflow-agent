@@ -100,7 +100,8 @@ class DocumentProcessor:
         self, 
         documents: List[Document], 
         user_id: str,
-        vector_service: Any
+        vector_service: Any,
+        file_id: str = None
     ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
         """準備文檔以進行索引
         
@@ -132,6 +133,8 @@ class DocumentProcessor:
             # 準備元數據
             metadata = documents[i].metadata.copy()
             metadata["user_id"] = user_id
+            if file_id:
+                metadata["file_id"] = file_id
             
             # 創建稀疏向量
             sparse_vec = vector_service.create_sparse_vector(
