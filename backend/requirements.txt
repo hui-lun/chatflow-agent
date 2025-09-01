@@ -18,3 +18,4 @@ python-multipart==0.0.20
 pypdf==5.9.0
 scipy==1.10.1
 pymilvus==2.6.0
+PyYAML==6.0.2

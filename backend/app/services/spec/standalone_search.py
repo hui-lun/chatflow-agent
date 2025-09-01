@@ -6,11 +6,12 @@ import json
 import sys
 import argparse
 import logging
+import yaml
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
 from ..llm import get_llm
 from ..database import db_service
 
@@ -46,82 +47,19 @@ async def spec_search(user_query: str) -> str:
                 agent = create_react_agent(llm, tools)
                 logger.info("ReAct agent created successfully")
 
-                # System + User messages (agent will decide which tool to invoke)
-                messages = [
-                    SystemMessage(
-                        content="""你是 BDM 專案資料助手。你必須使用 get_machine_info_by_model 工具來查詢機器型號資訊。
-
-重要指示：
-1. 對於任何型號查詢，你必須先調用 get_machine_info_by_model 工具
-2. 從用戶問題中辨識並擷取機器型號（例如：R283-Z90-AAD1-000、R283-Z90-AAD1、R283-Z90-AAD1-、R283-Z90 或 R283-Z90-）
-3. 使用該型號作為參數調用工具
-4. 根據工具返回的結果來回答用戶問題
-5. 如果工具返回錯誤，請如實報告錯誤信息
-6. 絕對不要憑空猜測或給出沒有數據支持的回答
-
-**回答格式要求：**
-當找到機器資訊時，請按照以下格式整理並回覆，將原始資料轉換成易讀的規格說明：
-
-🖥️ **[機器型號] 規格資訊**
-
-**基本資訊**
-• 型號：[ProjectModel]
-• GIGABYTE 序號：[gbtSn]
-• 機架規格：[systemInfo.densityFormFactor] ([description 中的機架描述])
-• 應用類別：[appInfo]
-• 開發階段：[statusStage]
-
-**處理器規格**
-• CPU 資訊：[systemInfo.CPUInfo] [CPUGeneration]
-• 處理器數量：[systemInfo.cpu_qty] 路
-• TDP 支援：[systemInfo.tdpLimit]
-• 核心架構：[systemInfo.CoreName]
-
-**記憶體規格**
-• 記憶體類型：[memoryType] [memoryR_U_DIMM]
-• 記憶體通道：[memoryChannel]-Channel
-• 記憶體插槽：[memorySlotCount] x DIMM
-• ECC 支援：[memoryECC]
-• 記憶體頻寬：[Memory_BandWidth] MT/s
-• 記憶體多工器：[memoryMultiplexer]
-
-**儲存裝置**
-[根據 storageInfo 陣列整理各個儲存位置的資訊]
-• [location]：[count] x [size] [type] [speed] [dimension]
-
-**擴充插槽**  
-[根據 pcieInfo 陣列整理 PCIe 插槽資訊]
-• PCIe 插槽：[根據 ExpansionSlot 和 pcieInfo 整理]
-• OCP NIC：[OCP]
-
-**網路連接**
-• LAN 連接埠：[systemInfo.lan]
-• 管理網路：[systemInfo.mlan]
-
-**電源系統**
-• PSU 規格：[psuCount] x [psuWatt]W 
-• 電源效率：[systemInfo.powerEfficiency]
-• 功耗估計：[barebonePowerConsumption]W (裸機)
-
-**實體規格**
-• 機箱尺寸：[systemInfo.dimensions]
-• 淨重：[systemInfo.netWeight]
-• 包裝重量：[systemInfo.grossWeight]
-• 散熱方式：[systemInfo.Cooling_Type]
-• 包裝尺寸：[systemInfo.packagingDimensions]
-
-**管理功能**
-• TPM 支援：[systemInfo.TPM_YorN] ([systemInfo.TPM_Model])
-• TPM Header：[systemInfo.TPM_HeaderQty] 個
-• 主機板：[systemInfo.motherboard]
-
-如果有多筆匹配結果 (prefix_matches)，請列出所有相關型號。
-請使用繁體中文回覆，並確保資訊準確且易於理解。""" 
-                    ),
-                    HumanMessage(
-                        content=user_query
-                    )
-                ]
+                # 載入系統提示詞
+                prompts_file = os.path.join(os.path.dirname(__file__), "system_prompts.yaml")
+                with open(prompts_file, 'r', encoding='utf-8') as f:
+                    prompts = yaml.safe_load(f)
+                
+                # 建立 ChatPromptTemplate
+                prompt_template = ChatPromptTemplate.from_messages([
+                    ("system", prompts['bdm_assistant']['system_prompt']),
+                    ("human", "{user_query}")
+                ])
+                
+                # 格式化消息
+                messages = prompt_template.format_messages(user_query=user_query)
                 
                 # Run agent reasoning + tool selection + response
                 logger.info(f"Running agent with query: {user_query}")
