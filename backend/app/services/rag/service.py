@@ -74,22 +74,18 @@ class RAGService:
         pdf_paths: List[str],
         collection_name: str,
         user_id: str,
-        chunk_size: int = None,
-        chunk_overlap: int = None,
         dense_vector_size: int = None,
-        auto_chunk: bool = True,
         file_id: str = None
     ) -> Dict[str, Any]:
-        """將 PDF 文檔索引到 Milvus 集合中
+        """將 PDF 文檔索引到 Milvus 集合中。
+        使用在服務初始化時配置的固定分塊策略。
         
         Args:
             pdf_paths: PDF 文件路徑列表
             collection_name: 目標集合名稱
             user_id: 文檔所屬用戶的 ID
-            chunk_size: 文本塊大小 (預設: 根據文件大小自動計算)
-            chunk_overlap: 塊之間的重疊字符數 (預設: 根據文件大小自動計算)
             dense_vector_size: 密集向量的維度 (預設: DEFAULT_VECTOR_DIM)
-            auto_chunk: 是否根據文件大小自動調整 chunk 參數
+            file_id: 文件的唯一ID
             
         Returns:
             包含索引統計信息的字典
@@ -117,21 +113,8 @@ class RAGService:
         try:
             for pdf_path in pdf_paths:
                 try:
-                    # 獲取文件大小 (MB)
                     file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
-                    
-                    # 如果啟用自動分塊，則根據文件大小計算合適的參數
-                    if auto_chunk:
-                        chunk_size, chunk_overlap = self.document_processor._calculate_chunk_size(file_size_mb)
-                    else:
-                        chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
-                        chunk_overlap = chunk_overlap or self.DEFAULT_CHUNK_OVERLAP
-                    
-                    # 更新文檔處理器的配置
-                    self.document_processor.chunk_size = chunk_size
-                    self.document_processor.chunk_overlap = chunk_overlap
-                    
-                    logger.info(f"處理文件: {pdf_path} (大小: {file_size_mb:.2f}MB, chunk_size: {chunk_size}, overlap: {chunk_overlap})")
+                    logger.info(f"處理文件: {pdf_path} (大小: {file_size_mb:.2f}MB)")
                     
                     # 1. 加載並處理文檔
                     documents = self.document_processor.process_documents([pdf_path])
@@ -139,7 +122,7 @@ class RAGService:
                         logger.warning(f"未找到有效文檔: {pdf_path}")
                         continue
                     
-                    # 2. 分割文檔為塊
+                    # 2. 分割文檔為塊 (使用預設的固定大小)
                     split_docs = self.document_processor.split_documents(documents)
                     if not split_docs:
                         logger.warning(f"文檔分割後為空: {pdf_path}")
@@ -166,8 +149,8 @@ class RAGService:
                         "size_mb": round(file_size_mb, 2),
                         "chunks_indexed": len(entities),
                         "points_upserted": points_upserted,
-                        "chunk_size": chunk_size,
-                        "chunk_overlap": chunk_overlap
+                        "chunk_size": self.document_processor.chunk_size,
+                        "chunk_overlap": self.document_processor.chunk_overlap
                     }
                     
                     results["files"].append(file_result)
@@ -186,14 +169,6 @@ class RAGService:
                 
             logger.info(f"索引完成: 共處理 {results['documents_processed']} 個文檔, {results['chunks_indexed']} 個塊")
             return results
-            
-            return {
-                "collection": collection_name,
-                "user_id": user_id,
-                "chunks_indexed": len(entities),
-                "points_upserted": points_upserted,
-                "documents_processed": len(documents)
-            }
             
         except Exception as e:
             error_msg = f"PDF 索引失敗: {str(e)}"

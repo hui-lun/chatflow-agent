@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, List, Any, Optional, Tuple
+import concurrent.futures
+from typing import Dict, List, Any, Optional
 
 from pymilvus import MilvusClient, DataType, CollectionSchema
 import scipy.sparse as sp
@@ -163,63 +164,59 @@ class MilvusService:
         dense_vector: List[float],
         sparse_vector: sp.csr_matrix,
         user_id: str,
-        limit: int = 5
+        limit: int = 5,
+        rerank_k: int = 60
     ) -> List[Dict[str, Any]]:
-        """執行混合搜索（密集+稀疏向量）
-        
-        Args:
-            collection_name: 集合名稱
-            dense_vector: 密集查詢向量
-            sparse_vector: 稀疏查詢向量 (CSR 格式)
-            user_id: 用戶 ID 用於過濾
-            limit: 返回的最大結果數
-            
-        Returns:
-            搜索結果列表，按相關性排序
+        """
+        通過並行發送密集和稀疏向量的搜索請求來執行混合搜索，並在客戶端使用 RRF 進行重新排序。
         """
         user_filter = f'user_id == "{user_id}"'
-        
-        # 密集向量搜索
-        dense_results = self.milvus_client.search(
-            collection_name=collection_name,
-            data=[dense_vector],
-            filter=user_filter,
-            limit=limit,
-            anns_field="dense_vectors",
-            output_fields=["text", "metadata", "user_id"]
-        )[0]
-        
-        # 稀疏向量搜索
-        sparse_results = self.milvus_client.search(
-            collection_name=collection_name,
-            data=sparse_vector,
-            filter=user_filter,
-            limit=limit,
-            anns_field="sparse_vectors",
-            output_fields=["text", "metadata", "user_id"]
-        )[0]
-        
-        # 使用 RRF 重新排序結果
-        return self._rerank_rrf([dense_results, sparse_results], limit=limit)
-    
-    def _rerank_rrf(
-        self, 
-        results_list: List[List[Dict]], 
-        k: int = 60,
-        limit: int = 5
-    ) -> List[Dict[str, Any]]:
-        """使用 Reciprocal Rank Fusion (RRF) 對多個搜索結果進行重新排序
-        
-        Args:
-            results_list: 多個搜索結果的列表
-            k: RRF 常數
-            limit: 返回的最大結果數
+        candidate_limit = max(limit * 4, 20)
+
+        def search_dense():
+            """執行密集向量搜索"""
+            try:
+                return self.milvus_client.search(
+                    collection_name=collection_name,
+                    data=[dense_vector],
+                    filter=user_filter,
+                    limit=candidate_limit,
+                    anns_field="dense_vectors",
+                    output_fields=["text", "metadata", "user_id"]
+                )[0]
+            except Exception as e:
+                logger.error(f"並行密集搜索失敗: {e}")
+                return []
+
+        def search_sparse():
+            """執行稀疏向量搜索"""
+            try:
+                return self.milvus_client.search(
+                    collection_name=collection_name,
+                    data=sparse_vector,
+                    filter=user_filter,
+                    limit=candidate_limit,
+                    anns_field="sparse_vectors",
+                    output_fields=["text", "metadata", "user_id"]
+                )[0]
+            except Exception as e:
+                logger.error(f"並行稀疏搜索失敗: {e}")
+                return []
+
+        # 使用線程池並行執行兩個搜索任務
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_dense = executor.submit(search_dense)
+            future_sparse = executor.submit(search_sparse)
             
-        Returns:
-            重新排序後的結果列表
-        """
+            dense_results = future_dense.result()
+            sparse_results = future_sparse.result()
+
+        # 在客戶端執行 RRF 重新排序
+        results_list = [dense_results, sparse_results]
+        
         ranked_lists = []
         for res in results_list:
+            if not res: continue
             ranked_lists.append({hit['id']: rank + 1 for rank, hit in enumerate(res)})
 
         rrf_scores = {}
@@ -231,12 +228,14 @@ class MilvusService:
             score = 0.0
             for rlist in ranked_lists:
                 if doc_id in rlist:
-                    score += 1.0 / (k + rlist[doc_id])
+                    score += 1.0 / (rerank_k + rlist[doc_id])
             rrf_scores[doc_id] = score
 
         sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda id: rrf_scores[id], reverse=True)
+        
         all_hits_map = {}
         for res in results_list:
+            if not res: continue
             for hit in res:
                 if hit['id'] not in all_hits_map:
                     all_hits_map[hit['id']] = hit
@@ -251,7 +250,7 @@ class MilvusService:
             })
 
         return final_results
-    
+
     def delete_by_file_id(self, collection_name: str, file_id: str, user_id: str) -> int:
         """根據文件 ID 刪除 Milvus 中的所有相關向量數據
         
