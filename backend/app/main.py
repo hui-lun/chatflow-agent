@@ -19,7 +19,7 @@ from .models import (
     WebSearchRequest, WebSearchResponse,
     FileUploadResponse, FileInfo, FileListResponse, RAGChatRequest, RAGChatResponse
 )
-from .services.spec.standalone_search import spec_search
+from .services.graph import app as graph_app
 from .services.rag.service import RAGService
 
 # 設置日誌
@@ -255,7 +255,7 @@ Please answer the user's question based on the web search results above. If the 
 @app.post("/chat/spec-search")
 async def spec_search_chat_endpoint(request: Request, current_user: dict = Depends(get_current_user)):
     """
-    Handles chat with spec search functionality using direct function call.
+    Handles chat with spec search functionality using LangGraph workflow.
     """
     try:
         # 手動解析 JSON 請求
@@ -276,17 +276,31 @@ async def spec_search_chat_endpoint(request: Request, current_user: dict = Depen
             logger.warning(f"Could not load chat history: {history_error}")
             history = []
 
-        # 2️⃣ 使用直接函數調用執行搜索
+        # 2️⃣ 使用 LangGraph 執行搜索流程
         try:
-            logger.info("Performing spec search via direct function call...")
-            spec_result = await spec_search(message)
-            logger.info("Spec search completed successfully")
+            logger.info("Performing spec search via LangGraph...")
+            
+            # 準備初始狀態
+            initial_state = {
+                "agent_query": message,
+                "summary": "",
+                "next_node": "",
+                "needs_streaming": False,
+                "model_name": "",
+                "search_result": "",
+                "error": ""
+            }
+            
+            # 執行 graph
+            result = await graph_app.ainvoke(initial_state)
+            
+            # 從結果中取得最終回應
+            bot_response = result.get("search_result", "未找到搜索結果")
+            
+            logger.info("LangGraph spec search completed successfully")
         except Exception as search_error:
-            logger.error(f"Spec search failed: {search_error}")
-            spec_result = f"Spec search failed: {search_error}"
-
-        # 3️⃣ 使用 spec search 結果作為回應
-        bot_response = spec_result
+            logger.error(f"LangGraph spec search failed: {search_error}")
+            bot_response = f"Spec search failed: {search_error}"
         logger.info("Spec search response received, saving to database...")
 
         # 4️⃣ 儲存對話記錄
