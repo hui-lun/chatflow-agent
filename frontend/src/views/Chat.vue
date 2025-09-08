@@ -120,7 +120,10 @@
           </div> -->
         </div>
         <div v-if="loading" class="chat-message bot loading">
-          <div class="message-content">Thinking...</div>
+          <div class="message-content">
+            <span v-if="isStreaming && streamingContent">{{ streamingContent }}</span>
+            <span v-else>Thinking...</span>
+          </div>
         </div>
       </div>
       
@@ -224,7 +227,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { sendChat, sendWebSearchChat, sendSpecSearchChat, sendRAGChat, getChatHistory, getAllSessions, deleteSession, downloadQVLFile } from '../api/chat'
+import { sendChat, sendChatStreaming, sendWebSearchChat, sendWebSearchChatStreaming, sendSpecSearchChat, sendSpecSearchChatStreaming, sendRAGChat, sendRAGChatStreaming, getChatHistory, getAllSessions, deleteSession, downloadQVLFile } from '../api/chat'
 import { logout, getStoredUsername } from '../api/auth'
 import '../assets/styles/main.scss'
 
@@ -242,6 +245,11 @@ const useWebSearch = ref(false)
 const showWebSearchMenu = ref(false)
 const useSpecSearch = ref(false)
 const useRAG = ref(false)
+const isStreaming = ref(false)
+const streamingContent = ref('')
+const streamingSearchSources = ref([])
+const streamingQVLDownloads = ref([])
+const streamingRetrievedDocs = ref([])
 
 // 載入聊天歷史
 const loadChatHistory = async () => {
@@ -400,48 +408,213 @@ const sendMessage = async () => {
       updateDisplaySessions()
     }
     
-    // 根據模式選擇不同的API調用
-    let response
+    // 根據模式選擇不同的API調用 - 全部使用 streaming
+    isStreaming.value = true
+    streamingContent.value = ''
+    streamingSearchSources.value = []
+    streamingQVLDownloads.value = []
+    streamingRetrievedDocs.value = []
+    
     if (useRAG.value) {
-      response = await sendRAGChat(userInput, sessionId)
+      // 使用 streaming 進行 RAG 聊天
+      await sendRAGChatStreaming(
+        userInput,
+        sessionId,
+        // onToken callback
+        (token) => {
+          streamingContent.value += token
+          scrollToBottom()
+        },
+        // onComplete callback
+        () => {
+          // streaming 完成，將內容添加到消息列表
+          const botMsg = {
+            role: 'bot',
+            content: streamingContent.value,
+            timestamp: new Date().toISOString()
+          }
+          
+          // 如果有RAG檢索的文檔，添加到消息中
+          if (streamingRetrievedDocs.value.length > 0) {
+            botMsg.retrieved_docs = streamingRetrievedDocs.value
+          }
+          
+          messages.value.push(botMsg)
+          
+          // 重置 streaming 狀態
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingRetrievedDocs.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onError callback
+        (error) => {
+          console.error('RAG Streaming error:', error)
+          messages.value.push({ 
+            role: 'bot', 
+            content: `Error: ${error.message || 'Failed to get response'}` 
+          })
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingRetrievedDocs.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onRetrievedDocs callback
+        (docs) => {
+          streamingRetrievedDocs.value = docs
+        }
+      )
+      
+      return // Early return for streaming case
     } else if (useSpecSearch.value) {
-      response = await sendSpecSearchChat(userInput, sessionId)
+      // 使用 streaming 進行 Spec Search 聊天
+      await sendSpecSearchChatStreaming(
+        userInput,
+        sessionId,
+        // onToken callback
+        (token) => {
+          streamingContent.value += token
+          scrollToBottom()
+        },
+        // onComplete callback
+        () => {
+          // streaming 完成，將內容添加到消息列表
+          const botMsg = {
+            role: 'bot',
+            content: streamingContent.value,
+            timestamp: new Date().toISOString()
+          }
+          
+          // 如果有 QVL 下載連結，添加到消息中
+          if (streamingQVLDownloads.value.length > 0) {
+            botMsg.qvl_downloads = streamingQVLDownloads.value
+          }
+          
+          messages.value.push(botMsg)
+          
+          // 重置 streaming 狀態
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingQVLDownloads.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onError callback
+        (error) => {
+          console.error('Spec Search Streaming error:', error)
+          messages.value.push({ 
+            role: 'bot', 
+            content: `Error: ${error.message || 'Failed to get response'}` 
+          })
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingQVLDownloads.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onQVLDownloads callback
+        (downloads) => {
+          streamingQVLDownloads.value = downloads
+        }
+      )
+      
+      return // Early return for streaming case
     } else if (useWebSearch.value) {
-      response = await sendWebSearchChat(userInput, sessionId)
+      // 使用 streaming 進行 Web Search 聊天
+      await sendWebSearchChatStreaming(
+        userInput,
+        sessionId,
+        // onToken callback
+        (token) => {
+          streamingContent.value += token
+          scrollToBottom()
+        },
+        // onComplete callback
+        () => {
+          // streaming 完成，將內容添加到消息列表
+          const botMsg = {
+            role: 'bot',
+            content: streamingContent.value,
+            timestamp: new Date().toISOString()
+          }
+          
+          // 如果有搜索來源，添加到消息中
+          if (streamingSearchSources.value.length > 0) {
+            botMsg.search_sources = streamingSearchSources.value
+          }
+          
+          messages.value.push(botMsg)
+          
+          // 重置 streaming 狀態
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingSearchSources.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onError callback
+        (error) => {
+          console.error('Web Search Streaming error:', error)
+          messages.value.push({ 
+            role: 'bot', 
+            content: `Error: ${error.message || 'Failed to get response'}` 
+          })
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingSearchSources.value = []
+          loading.value = false
+          scrollToBottom()
+        },
+        // onSearchSources callback
+        (sources) => {
+          streamingSearchSources.value = sources
+        }
+      )
+      
+      return // Early return for streaming case
     } else {
-      response = await sendChat(userInput, sessionId)
-    }
-    
-    const botMsg = { 
-      role: 'bot', 
-      content: response.response, 
-      timestamp: new Date().toISOString()
-    }
-    
-    // 如果有搜索來源，添加到消息中
-    if (response.search_sources && response.search_sources.length > 0) {
-      botMsg.search_sources = response.search_sources
-    }
-    
-    // 如果有 QVL 下載連結，添加到消息中
-    if (response.qvl_downloads && response.qvl_downloads.length > 0) {
-      botMsg.qvl_downloads = response.qvl_downloads
-    }
-    
-    // 如果有RAG檢索的文檔，添加到消息中
-    if (response.retrieved_docs && response.retrieved_docs.length > 0) {
-      botMsg.retrieved_docs = response.retrieved_docs
-    }
-    
-    messages.value.push(botMsg)
-    
-    // 確保會話在列表中（處理後端可能改變 session ID 的情況）
-    if (response.session_id && response.session_id !== sessionId) {
-      currentSession.value = response.session_id
-      if (!sessions.value.includes(response.session_id)) {
-        sessions.value.unshift(response.session_id)
-        updateDisplaySessions()
-      }
+      // 使用 streaming 進行基本聊天
+      await sendChatStreaming(
+        userInput,
+        sessionId,
+        // onToken callback
+        (token) => {
+          streamingContent.value += token
+          scrollToBottom()
+        },
+        // onComplete callback
+        () => {
+          // streaming 完成，將內容添加到消息列表
+          const botMsg = {
+            role: 'bot',
+            content: streamingContent.value,
+            timestamp: new Date().toISOString()
+          }
+          messages.value.push(botMsg)
+          
+          // 重置 streaming 狀態
+          isStreaming.value = false
+          streamingContent.value = ''
+          loading.value = false
+          scrollToBottom()
+        },
+        // onError callback
+        (error) => {
+          console.error('Basic Chat Streaming error:', error)
+          messages.value.push({ 
+            role: 'bot', 
+            content: `Error: ${error.message || 'Failed to get response'}` 
+          })
+          isStreaming.value = false
+          streamingContent.value = ''
+          loading.value = false
+          scrollToBottom()
+        }
+      )
+      
+      return // Early return for streaming case
     }
     
   } catch (error) {
@@ -450,9 +623,11 @@ const sendMessage = async () => {
       content: `Error: ${error.message || 'Failed to get response'}` 
     })
   } finally {
-    loading.value = false
-    await nextTick()
-    scrollToBottom()
+    if (!isStreaming.value) {
+      loading.value = false
+      await nextTick()
+      scrollToBottom()
+    }
   }
 }
 

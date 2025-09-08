@@ -189,4 +189,314 @@ export async function sendRAGChat(message, sessionId = null) {
   }
   const res = await api.post('/chat/rag', payload)
   return res.data
+}
+
+/**
+ * Send a chat message with streaming response.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @param {Function} onToken - Callback function to handle each token received.
+ * @param {Function} onComplete - Callback function when streaming is complete.
+ * @param {Function} onError - Callback function for handling errors.
+ * @returns {Promise<void>}
+ */
+export async function sendChatStreaming(message, sessionId = null, onToken, onComplete, onError) {
+  try {
+    const token = localStorage.getItem('token')
+    const payload = { message }
+    if (sessionId) {
+      payload.session_id = sessionId
+    }
+
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Token 無效，清除本地儲存並重新導向登入頁面
+        localStorage.removeItem('token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+        return
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) {
+          onComplete()
+          break
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const data = JSON.parse(line)
+              if (data.token) {
+                onToken(data.token)
+              } else if (data.error) {
+                onError(new Error(data.error))
+                return
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse streaming data:', line, parseError)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error) {
+    onError(error)
+  }
+}
+
+/**
+ * Send a web search chat message with streaming response.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @param {Function} onToken - Callback function to handle each token received.
+ * @param {Function} onComplete - Callback function when streaming is complete.
+ * @param {Function} onError - Callback function for handling errors.
+ * @param {Function} onSearchSources - Callback function to handle search sources.
+ * @returns {Promise<void>}
+ */
+export async function sendWebSearchChatStreaming(message, sessionId = null, onToken, onComplete, onError, onSearchSources) {
+  try {
+    const token = localStorage.getItem('token')
+    const payload = { message }
+    if (sessionId) {
+      payload.session_id = sessionId
+    }
+
+    const response = await fetch(`${API_BASE_URL}/chat/web-search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+        return
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) {
+          onComplete()
+          break
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const data = JSON.parse(line)
+              if (data.token) {
+                onToken(data.token)
+              } else if (data.search_sources) {
+                onSearchSources(data.search_sources)
+              } else if (data.error) {
+                onError(new Error(data.error))
+                return
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse streaming data:', line, parseError)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error) {
+    onError(error)
+  }
+}
+
+/**
+ * Send a spec search chat message with streaming response.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @param {Function} onToken - Callback function to handle each token received.
+ * @param {Function} onComplete - Callback function when streaming is complete.
+ * @param {Function} onError - Callback function for handling errors.
+ * @param {Function} onQVLDownloads - Callback function to handle QVL downloads.
+ * @returns {Promise<void>}
+ */
+export async function sendSpecSearchChatStreaming(message, sessionId = null, onToken, onComplete, onError, onQVLDownloads) {
+  try {
+    const token = localStorage.getItem('token')
+    const payload = { message }
+    if (sessionId) {
+      payload.session_id = sessionId
+    }
+
+    const response = await fetch(`${API_BASE_URL}/chat/spec-search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+        return
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) {
+          onComplete()
+          break
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const data = JSON.parse(line)
+              if (data.token) {
+                onToken(data.token)
+              } else if (data.qvl_downloads) {
+                onQVLDownloads(data.qvl_downloads)
+              } else if (data.error) {
+                onError(new Error(data.error))
+                return
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse streaming data:', line, parseError)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error) {
+    onError(error)
+  }
+}
+
+/**
+ * Send a RAG chat message with streaming response.
+ * @param {string} message - The user's message.
+ * @param {string} sessionId - Optional session ID for conversation grouping.
+ * @param {Function} onToken - Callback function to handle each token received.
+ * @param {Function} onComplete - Callback function when streaming is complete.
+ * @param {Function} onError - Callback function for handling errors.
+ * @param {Function} onRetrievedDocs - Callback function to handle retrieved documents.
+ * @returns {Promise<void>}
+ */
+export async function sendRAGChatStreaming(message, sessionId = null, onToken, onComplete, onError, onRetrievedDocs) {
+  try {
+    const token = localStorage.getItem('token')
+    const payload = { message }
+    if (sessionId) {
+      payload.session_id = sessionId
+    }
+
+    const response = await fetch(`${API_BASE_URL}/chat/rag`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+        return
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        
+        if (done) {
+          onComplete()
+          break
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const data = JSON.parse(line)
+              if (data.token) {
+                onToken(data.token)
+              } else if (data.retrieved_docs) {
+                onRetrievedDocs(data.retrieved_docs)
+              } else if (data.error) {
+                onError(new Error(data.error))
+                return
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse streaming data:', line, parseError)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  } catch (error) {
+    onError(error)
+  }
 } 
