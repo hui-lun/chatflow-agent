@@ -5,6 +5,7 @@ import asyncio
 from typing_extensions import TypedDict
 from .llm import get_llm
 from .spec.standalone_search import spec_search
+from .spec.recommend_search import recommend_search
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -104,7 +105,32 @@ def spec_search_node(state: AgentState) -> dict:
             "error": str(e)
         }
 
-def recommend_node(state: AgentState):
-    pass
+def recommend_node(state: AgentState) -> dict:
+    """使用spec目錄裡面的recommend_search.py 進行機器型號推薦"""
+    query = state["agent_query"]
+    logger.info(f"[recommend_node] Processing recommendation query: {query}")
+    
+    try:
+        # 使用 asyncio.run 來執行異步的 recommend_search 函數
+        result = asyncio.run(recommend_search(query))
+        logger.info(f"[recommend_node] Machine recommendation completed successfully")
+        
+        return {
+            "search_result": result,
+            "summary": f"已完成機器推薦: {query[:50]}...",
+            "next_node": "END",
+            "error": ""
+        }
+        
+    except Exception as e:
+        error_msg = f"Machine recommendation error: {str(e)}"
+        logger.error(f"[recommend_node] {error_msg}")
+        
+        return {
+            "search_result": error_msg,
+            "summary": f"機器推薦失敗: {str(e)}",
+            "next_node": "END",
+            "error": str(e)
+        }
 
 
