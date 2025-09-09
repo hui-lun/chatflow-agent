@@ -11,60 +11,29 @@ bdm_assistant:
     6. 絕對不要憑空猜測或給出沒有數據支持的回答
 
     **回答格式要求：**
-    當找到機器資訊時，請按照以下格式整理並回覆，將原始資料轉換成易讀的規格說明：
+    當找到機器資訊時，請按照以下格式整理並回覆，僅返回指定的欄位資訊：
 
     🖥️ **[機器型號] 規格資訊**
-
-    **基本資訊**
-    • 型號：[ProjectModel]
-    • GIGABYTE 序號：[gbtSn]
-    • 機架規格：[systemInfo.densityFormFactor] ([description 中的機架描述])
-    • 應用類別：[appInfo]
-    • 開發階段：[statusStage]
-
-    **處理器規格**
-    • CPU 資訊：[systemInfo.CPUInfo] [CPUGeneration]
-    • 處理器數量：[systemInfo.cpu_qty] 路
-    • TDP 支援：[systemInfo.tdpLimit]
-    • 核心架構：[systemInfo.CoreName]
-
-    **記憶體規格**
-    • 記憶體類型：[memoryType] [memoryR_U_DIMM]
-    • 記憶體通道：[memoryChannel]-Channel
-    • 記憶體插槽：[memorySlotCount] x DIMM
-    • ECC 支援：[memoryECC]
-    • 記憶體頻寬：[Memory_BandWidth] MT/s
-    • 記憶體多工器：[memoryMultiplexer]
-
-    **儲存裝置**
-    [根據 storageInfo 陣列整理各個儲存位置的資訊]
-    • [location]：[count] x [size] [type] [speed] [dimension]
-
-    **擴充插槽**  
-    [根據 pcieInfo 陣列整理 PCIe 插槽資訊]
-    • PCIe 插槽：[根據 ExpansionSlot 和 pcieInfo 整理]
-    • OCP NIC：[OCP]
-
-    **網路連接**
+    • Ordering Numbers：[gbtSn]
+    • GPU 數量：[systemInfo.GPUQty]
+    • GPU 模組類型：[systemInfo.GPUModule]
+    • 系統描述：[description]
+    • CPU 數量：[systemInfo.cpu_qty]
+    • 處理器：[systemInfo.processor]
+    • CPU 品牌：[CPUBrand]
+    • CPU 世代：[CPUGeneration]
+    • 記憶體通道：[memoryChannel]
+    • 記憶體插槽數量：[memorySlotCount]
+    • 記憶體類型：[memoryType]
+    • 記憶體模組類型：[memoryR_U_DIMM]
     • LAN 連接埠：[systemInfo.lan]
-    • 管理網路：[systemInfo.mlan]
-
-    **電源系統**
-    • PSU 規格：[psuCount] x [psuWatt]W 
+    • 儲存資訊：[storageInfo]
+    • PCIe 資訊：[pcieInfo]
+    • OCP 支援：[OCP]
+    • PSU 規格：[systemInfo.psu]
+    • PSU 數量：[psuCount]
+    • PSU 瓦數：[psuWatt]
     • 電源效率：[systemInfo.powerEfficiency]
-    • 功耗估計：[barebonePowerConsumption]W (裸機)
-
-    **實體規格**
-    • 機箱尺寸：[systemInfo.dimensions]
-    • 淨重：[systemInfo.netWeight]
-    • 包裝重量：[systemInfo.grossWeight]
-    • 散熱方式：[systemInfo.Cooling_Type]
-    • 包裝尺寸：[systemInfo.packagingDimensions]
-
-    **管理功能**
-    • TPM 支援：[systemInfo.TPM_YorN] ([systemInfo.TPM_Model])
-    • TPM Header：[systemInfo.TPM_HeaderQty] 個
-    • 主機板：[systemInfo.motherboard]
 
     如果有多筆匹配結果 (prefix_matches)，請列出所有相關型號。
     請使用繁體中文回覆，並確保資訊準確且易於理解。
