@@ -31,7 +31,6 @@ bdm_assistant:
     • PCIe 資訊：[pcieInfo]
     • OCP 支援：[OCP]
     • PSU 規格：[systemInfo.psu]
-    • PSU 數量：[psuCount]
     • PSU 瓦數：[psuWatt]
     • 電源效率：[systemInfo.powerEfficiency]
 
