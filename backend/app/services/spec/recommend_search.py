@@ -53,7 +53,7 @@ def parse_user_requirements(user_query: str) -> Dict[str, Any]:
   "cpu_requirements": "具體CPU需求描述" 或 null,
   "memory_requirements": "記憶體需求" 或 null,
   "storage_requirements": "儲存需求" 或 null,
-  "cooling_type": "Air Cooling" 或 "Liquid Cooling" 或 null,
+  "cooling_type": "Air Cooling (氣冷)" 或 "Liquid Cooling (液冷)" 或 null,
   "gpu_support": true/false (是否需要GPU支援),
   "gpu_requirements": "GPU需求描述" 或 null,
   "form_factor": "機架規格需求" 或 null,
@@ -189,22 +189,32 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                 reasons.append("支援 DDR4 記憶體")
         
         # 儲存需求匹配
+        # 儲存需求匹配 (RAWstorageInfo, 多重支援但只加一次分數)
         if requirements.get("storage_requirements"):
             storage_req = requirements["storage_requirements"].lower()
-            storage_info = machine_data.get("storageInfo", [])
-            
-            if isinstance(storage_info, list):
-                for storage in storage_info:
-                    if isinstance(storage, dict):
-                        storage_type = storage.get("type", "").lower()
-                        if "nvme" in storage_req and "nvme" in storage_type:
-                            score += 10
-                            reasons.append("支援 NVMe 儲存")
-                            break
-                        elif "sata" in storage_req and "sata" in storage_type:
-                            score += 10
-                            reasons.append("支援 SATA 儲存")
-                            break
+            raw_storage_info = machine_data.get("RAWstorageInfo", "").lower()
+
+            if raw_storage_info:
+                matched_reasons = []
+                matched = False  # 追蹤是否有至少一個符合
+
+                # 定義可支援的儲存類型關鍵字
+                storage_keywords = {
+                    "nvme": "支援 NVMe 儲存",
+                    "sata": "支援 SATA 儲存",
+                    "m.2": "支援 M.2 儲存",
+                    "u.2": "支援 U.2 儲存",
+                }
+
+                for key, reason_text in storage_keywords.items():
+                    if key in storage_req and key in raw_storage_info:
+                        matched_reasons.append(reason_text)
+                        matched = True
+
+                if matched:
+                    score += 10   # 不管符合幾個，只加一次分數
+                    reasons.extend(matched_reasons)
+
         
         # 機架規格匹配
         if requirements.get("form_factor"):
