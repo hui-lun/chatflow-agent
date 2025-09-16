@@ -35,6 +35,8 @@ class SearchRequest(BaseModel):
     user_id: str
     limit: int = 5
     score_threshold: float = 0.0
+    metadata_filter: Optional[Dict[str, Any]] = None # 新增元數據過濾條件
+
 
 class IndexingRequest(BaseModel):
     """索引請求模型"""

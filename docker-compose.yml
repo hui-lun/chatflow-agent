@@ -107,26 +107,18 @@ services:
 
   milvus-standalone:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.6.0-gpu
+    image: milvusdb/milvus:v2.6.0
     command: ["milvus", "run", "standalone"]
     security_opt:
       - seccomp:unconfined
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MQ_TYPE: rocksmq
     volumes:
       - milvus_data:/var/lib/milvus
     ports:
       - "19530:19530"
       - "9091:9091"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: ["gpu"]
-              device_ids: ["0"]
     depends_on:
       - etcd
       - minio
