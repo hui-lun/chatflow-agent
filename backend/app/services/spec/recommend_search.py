@@ -134,7 +134,7 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                     if isinstance(sys, dict):
                         cooling_type = sys.get("Cooling_Type", "").lower()
                         if "liquid" in cooling_req and "liquid" in cooling_type:
-                            score += 15
+                            score += 10
                             reasons.append("支援液冷散熱")
                             break
                         elif "air" in cooling_req and "air" in cooling_type:
@@ -155,7 +155,7 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                     if isinstance(pcie, dict):
                         device_type = pcie.get("deviceType", "").lower()
                         if "pcie" in device_type:
-                            score += 15
+                            score += 20
                             reasons.append("支援 PCIe GPU 擴充")
                             gpu_support_found = True
                             break
@@ -166,32 +166,27 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                     if isinstance(sys, dict):
                         gpu_module = sys.get("GPUModule", "").lower()
                         if "pcie" in gpu_module or "sxm" in gpu_module:
-                            score += 15
+                            score += 20
                             reasons.append(f"支援 GPU ({sys.get('GPUModule', 'PCIe')})")
                             gpu_support_found = True
                             break
             
             # 檢查擴充插槽描述
             if not gpu_support_found and "pcie" in expansion_slot.lower():
-                score += 10
+                score += 20
                 reasons.append("具備 PCIe 擴充插槽")
         
         # 記憶體類型匹配
         if requirements.get("memory_requirements"):
             memory_req = requirements["memory_requirements"].lower()
-            memory_type = machine_data.get("memoryType", "").lower()
+            memory_type = machine_data.get("MemoryType", "").lower()
             
             if "ddr5" in memory_req and "ddr5" in memory_type:
                 score += 10
                 reasons.append("支援 DDR5 記憶體")
             elif "ddr4" in memory_req and "ddr4" in memory_type:
-                score += 8
+                score += 10
                 reasons.append("支援 DDR4 記憶體")
-            elif "ecc" in memory_req:
-                memory_ecc = machine_data.get("memoryECC", "").lower()
-                if "yes" in memory_ecc or "supported" in memory_ecc:
-                    score += 12
-                    reasons.append("支援 ECC 記憶體")
         
         # 儲存需求匹配
         if requirements.get("storage_requirements"):
@@ -207,7 +202,7 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                             reasons.append("支援 NVMe 儲存")
                             break
                         elif "sata" in storage_req and "sata" in storage_type:
-                            score += 8
+                            score += 10
                             reasons.append("支援 SATA 儲存")
                             break
         
@@ -221,7 +216,7 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
                     if isinstance(sys, dict):
                         density_form = sys.get("densityFormFactor", "").lower()
                         if form_factor_req in density_form or density_form in form_factor_req:
-                            score += 8
+                            score += 10
                             reasons.append(f"符合 {sys.get('densityFormFactor', '')} 機架規格")
                             break
         
@@ -244,7 +239,7 @@ def match_machine_to_requirements(machine_data: Dict[str, Any], requirements: Di
         if status_stage == "MP":
             score += 5
             reasons.append("量產階段產品")
-        elif status_stage in ["DVT", "EVT"]:
+        elif status_stage == "DVT":
             score += 2
             reasons.append(f"{status_stage} 階段產品")
             
