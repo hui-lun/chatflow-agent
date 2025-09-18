@@ -187,8 +187,11 @@ def search_recommended_machines(user_query: str) -> str:
         # 只取前 10 台
         top_recommendations = results[:10]
 
+        model_list = [item["machine"].get("ProjectModel", "未知型號") for item in top_recommendations]
+
         response = f"🤖 **機器型號推薦結果**\n\n根據您的需求：「{user_query}」\n\n"
-        response += f"為您找到 {len(top_recommendations)} 台符合所有 Hard Constraints 的機器：\n\n"
+        response += f"為您找到 {len(top_recommendations)} 台符合需求的機器：\n\n"
+        response += "📋 **符合需求的型號清單**：\n" + ", ".join(model_list) + "\n\n"
         for i, item in enumerate(top_recommendations, 1):
             m = item["machine"]
             response += f"**{i}. {m.get('ProjectModel', '未知型號')}**\n"
