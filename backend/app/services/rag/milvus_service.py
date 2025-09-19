@@ -2,7 +2,7 @@ import logging
 import concurrent.futures
 from typing import Dict, List, Any, Optional
 
-from pymilvus import MilvusClient, DataType, CollectionSchema
+from pymilvus import MilvusClient, DataType, CollectionSchema, Collection
 import scipy.sparse as sp
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,10 @@ class MilvusService:
     
     # Milvus 索引參數
     HNSW_INDEX_PARAMS = {"M": 16, "efConstruction": 256}
-    
+    # 定義新的 Schema 版本和文本最大長度
+    SCHEMA_VERSION = "v2"
+    TEXT_MAX_LENGTH = 32768
+
     def __init__(self, milvus_uri: Optional[str] = None):
         """初始化 Milvus 服務
         
@@ -31,12 +34,16 @@ class MilvusService:
         Returns:
             配置好的 CollectionSchema 對象
         """
-        schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=False)
+        schema = MilvusClient.create_schema(
+            auto_id=True, 
+            enable_dynamic_field=False,
+            description=f"Schema {self.SCHEMA_VERSION}" # 添加版本描述
+        )
         
         # 添加字段到 schema
         schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
         schema.add_field(field_name="user_id", datatype=DataType.VARCHAR, max_length=256)
-        schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=4000)
+        schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=self.TEXT_MAX_LENGTH) # 使用新的最大長度
         schema.add_field(field_name="metadata", datatype=DataType.JSON)
         schema.add_field(
             field_name="dense_vectors", 
@@ -97,22 +104,31 @@ class MilvusService:
         return self.milvus_client.has_collection(collection_name)
         
     def create_collection(self, collection_name: str, dense_vector_size: int = 768) -> None:
-        """創建或驗證 Milvus 集合
-        
-        Args:
-            collection_name: 要創建或驗證的集合名稱
-            dense_vector_size: 密集向量的維度
-            
-        Raises:
-            ValueError: 當集合名稱無效或向量大小無效時
-            RuntimeError: 當集合創建失敗時
+        """
+        創建或驗證/升級 Milvus 集合。
+        如果集合存在但 schema 過期，會自動刪除並重建。
         """
         if not collection_name or not isinstance(collection_name, str):
             raise ValueError("集合名稱必須是非空字符串")
             
         try:
-            if not self.milvus_client.has_collection(collection_name):
-                logger.info(f"創建新集合: {collection_name}")
+            needs_recreation = False
+            if self.milvus_client.has_collection(collection_name):
+                logger.info(f"集合 {collection_name} 已存在，正在檢查 schema 版本。")
+                collection_info = self.milvus_client.describe_collection(collection_name)
+                
+                # 檢查 schema 版本是否匹配
+                current_description = collection_info.get("description", "")
+                if self.SCHEMA_VERSION not in current_description:
+                    logger.warning(
+                        f"Schema 版本不匹配 (需要: {self.SCHEMA_VERSION}, 現有: {current_description})。"
+                        f"將刪除並重建集合 {collection_name}。"
+                    )
+                    needs_recreation = True
+                    self.milvus_client.drop_collection(collection_name)
+            
+            if needs_recreation or not self.milvus_client.has_collection(collection_name):
+                logger.info(f"創建新集合: {collection_name} (Schema: {self.SCHEMA_VERSION})" )
                 
                 # 創建 schema 和集合
                 schema = self._create_collection_schema(dense_vector_size)
