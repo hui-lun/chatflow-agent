@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional, List, AsyncGenerator
@@ -21,6 +21,7 @@ from .models import (
     FileUploadResponse, FileInfo, FileListResponse, RAGChatRequest, RAGChatResponse
 )
 from .services.graph import app as graph_app
+# 替換為新的 RAGService
 from .services.rag.service import RAGService
 
 # 設置日誌
@@ -64,14 +65,13 @@ async def startup_event():
         set_auth_service(auth_service)
         logger.info("Auth service initialized")
         
-        # 初始化RAG服務
+        # 初始化新的 RAG 服務
         global rag_service
         rag_service = RAGService()
-        logger.info("RAG service initialized")
+        logger.info("RAG service (lightRAG engine) initialized")
             
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
-        # 不拋出異常，讓應用繼續運行
 
 # 關閉時斷開資料庫連接
 @app.on_event("shutdown")
@@ -82,6 +82,8 @@ async def shutdown_event():
         logger.info("Database disconnected")
     except Exception as e:
         logger.error(f"Error disconnecting from database: {e}")
+
+# ... (認證和舊的聊天路由保持不變) ...
 
 # 認證路由
 @app.post("/auth/login", response_model=LoginResponse)
@@ -116,6 +118,171 @@ async def login(request: LoginRequest):
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """取得當前使用者資訊"""
     return UserResponse(username=current_user["username"])
+
+# ... (其他聊天端點) ...
+
+# Knowledge Base相關endpoints (已更新為使用新的 RAGService)
+@app.post("/kb/upload", response_model=FileUploadResponse)
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    上傳PDF檔案到使用者的知識庫 (使用 lightRAG 引擎)
+    """
+    try:
+        if not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="僅支援PDF檔案")
+        
+        if file.size > 50 * 1024 * 1024:  # 50MB限制
+            raise HTTPException(status_code=400, detail="檔案大小不能超過50MB")
+        
+        file_id = str(uuid.uuid4())
+        username = current_user["username"]
+        
+        # 檢查檔案是否已被處理
+        if db_service.client.KB.kb_files.find_one({"filename": file.filename, "username": username, "status": "processed"}):
+            logger.info(f"檔案 '{file.filename}' 已為使用者 '{username}' 處理過，跳過。")
+            # 可以在此返回一個特定的回應，告知前端檔案已存在
+            existing_file = db_service.client.KB.kb_files.find_one({"filename": file.filename, "username": username})
+            return FileUploadResponse(
+                file_id=existing_file["file_id"],
+                filename=existing_file["filename"],
+                file_size=existing_file["file_size"],
+                status="processed",
+                message=f"檔案先前已處理完成。"
+            )
+
+        user_upload_dir = UPLOAD_DIR / username
+        user_upload_dir.mkdir(exist_ok=True)
+        file_path = user_upload_dir / f"{file_id}_{file.filename}"
+        
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        try:
+            # 使用新的 RAGService 處理文檔
+            await rag_service.process_document(user_id=username, file_path=str(file_path))
+            
+            # 儲存檔案元資料到MongoDB
+            file_metadata = {
+                "file_id": file_id,
+                "filename": file.filename,
+                "file_size": file.size,
+                "file_path": str(file_path),
+                "username": username,
+                "uploaded_at": datetime.now(),
+                "status": "processed",
+                "chunks_count": -1 # lightRAG 不直接返回 chunk 數量，設為-1
+            }
+            db_service.client.KB.kb_files.insert_one(file_metadata)
+            
+            return FileUploadResponse(
+                file_id=file_id,
+                filename=file.filename,
+                file_size=file.size,
+                status="processed",
+                message=f"檔案已成功提交處理。"
+            )
+            
+        except Exception as e:
+            logger.error(f"lightRAG PDF 處理失敗: {e}", exc_info=True)
+            if file_path.exists():
+                file_path.unlink()
+            raise HTTPException(status_code=500, detail=f"檔案處理失敗: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"檔案上傳錯誤: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"檔案上傳失敗: {str(e)}")
+
+@app.get("/kb/files", response_model=FileListResponse)
+async def get_files(current_user: dict = Depends(get_current_user)):
+    """ 取得使用者的檔案列表 (與 RAG 引擎無關) """
+    try:
+        username = current_user["username"]
+        files_cursor = db_service.client.KB.kb_files.find({"username": username}).sort("uploaded_at", -1)
+        files = [FileInfo(**{**f, "uploaded_at": f["uploaded_at"].isoformat()}) for f in files_cursor]
+        return FileListResponse(files=files)
+    except Exception as e:
+        logger.error(f"取得檔案列表失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/kb/files/{file_id}")
+async def delete_file(file_id: str, current_user: dict = Depends(get_current_user)):
+    """ 刪除使用者的檔案記錄和本地檔案 """
+    try:
+        username = current_user["username"]
+        file_doc = db_service.client.KB.kb_files.find_one({"file_id": file_id, "username": username})
+        
+        if not file_doc:
+            raise HTTPException(status_code=404, detail="檔案不存在")
+        
+        # 刪除本地檔案
+        file_path = Path(file_doc["file_path"])
+        if file_path.exists():
+            file_path.unlink()
+        
+        # 從MongoDB刪除檔案記錄
+        db_service.client.KB.kb_files.delete_one({"file_id": file_id, "username": username})
+        
+        # TODO: lightRAG/RAGAnything 的向量刪除邏輯需要另外實現
+        logger.warning(f"File record {file_id} deleted for user {username}. Vector deletion is not yet implemented for lightRAG engine.")
+        
+        return {"message": "檔案記錄已刪除", "file_id": file_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"刪除檔案失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/rag")
+async def rag_chat_endpoint(request: RAGChatRequest, current_user: dict = Depends(get_current_user)):
+    """
+    RAG聊天端點 (使用 lightRAG 引擎)
+    """
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            username = current_user["username"]
+            
+            file_count = db_service.client.KB.kb_files.count_documents({"username": username, "status": "processed"})
+            if file_count == 0:
+                yield json.dumps({"error": "尚未上傳任何檔案到知識庫。"}) + "\n"
+                return
+
+            # 使用新的 RAGService 進行查詢
+            rag_result = await rag_service.query(user_id=username, question=request.message)
+            bot_response = rag_result["response"]
+            retrieved_docs = rag_result.get("retrieved_docs", [])
+            
+            logger.info(f"lightRAG RAG completed with {len(retrieved_docs)} retrieved documents")
+
+            # Stream response
+            for char in bot_response:
+                yield json.dumps({"token": char}) + "\n"
+                await asyncio.sleep(0.01)
+            
+            # 儲存對話記錄
+            db_service.save_chat_message(
+                user_message=request.message,
+                bot_response=bot_response,
+                session_id=request.session_id or "default",
+                username=username
+            )
+            
+            # 發送檢索到的文檔
+            if retrieved_docs:
+                yield json.dumps({"retrieved_docs": retrieved_docs}) + "\n"
+            
+        except Exception as e:
+            error_msg = f"Error in RAG chat: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            yield json.dumps({"error": error_msg}) + "\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 # 受保護的聊天路由
 @app.post("/chat")
@@ -527,269 +694,3 @@ async def download_qvl_file(collection_name: str, current_user: dict = Depends(g
     except Exception as e:
         logger.error(f"Error downloading QVL file {collection_name}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to download QVL file: {str(e)}")
-
-# Knowledge Base相關endpoints
-@app.post("/kb/upload", response_model=FileUploadResponse)
-async def upload_file(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    上傳PDF檔案到使用者的知識庫
-    """
-    try:
-        # 檢查檔案類型
-        if not file.filename.lower().endswith('.pdf'):
-            raise HTTPException(status_code=400, detail="僅支援PDF檔案")
-        
-        if file.size > 50 * 1024 * 1024:  # 50MB限制
-            raise HTTPException(status_code=400, detail="檔案大小不能超過50MB")
-        
-        # 生成唯一檔案ID
-        file_id = str(uuid.uuid4())
-        username = current_user["username"]
-        
-        # 保存檔案到本地
-        user_upload_dir = UPLOAD_DIR / username
-        user_upload_dir.mkdir(exist_ok=True)
-        
-        file_path = user_upload_dir / f"{file_id}_{file.filename}"
-        
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
-        # 獲取使用者專屬collection名稱
-        collection_name = RAGService.get_user_collection_name(username)
-        
-        # 處理PDF並索引到向量資料庫
-        try:
-            result = rag_service.index_pdfs(
-                pdf_paths=[str(file_path)],
-                collection_name=collection_name,
-                user_id=username,
-                file_id=file_id
-            )
-            
-            # 儲存檔案元資料到MongoDB
-            file_metadata = {
-                "file_id": file_id,
-                "filename": file.filename,
-                "file_size": file.size,
-                "file_path": str(file_path),
-                "username": username,
-                "uploaded_at": datetime.now(),
-                "status": "processed",
-                "chunks_count": result.get("chunks_indexed", 0)
-            }
-            
-            db_service.client.KB.kb_files.insert_one(file_metadata)
-            
-            return FileUploadResponse(
-                file_id=file_id,
-                filename=file.filename,
-                file_size=file.size,
-                status="processed",
-                message=f"檔案已成功處理，共產生 {result.get('chunks_indexed', 0)} 個文本塊"
-            )
-            
-        except Exception as e:
-            logger.error(f"PDF處理失敗: {e}")
-            # 清理已上傳的檔案
-            if file_path.exists():
-                file_path.unlink()
-            raise HTTPException(status_code=500, detail=f"檔案處理失敗: {str(e)}")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"檔案上傳錯誤: {e}")
-        raise HTTPException(status_code=500, detail=f"檔案上傳失敗: {str(e)}")
-
-@app.get("/kb/files", response_model=FileListResponse)
-async def get_files(current_user: dict = Depends(get_current_user)):
-    """
-    取得使用者的檔案列表
-    """
-    try:
-        username = current_user["username"]
-        
-        # 從MongoDB獲取檔案列表
-        files_cursor = db_service.client.KB.kb_files.find(
-            {"username": username}
-        ).sort("uploaded_at", -1)
-        
-        files = []
-        for file_doc in files_cursor:
-            files.append(FileInfo(
-                file_id=file_doc["file_id"],
-                filename=file_doc["filename"],
-                file_size=file_doc["file_size"],
-                uploaded_at=file_doc["uploaded_at"].isoformat(),
-                status=file_doc["status"],
-                chunks_count=file_doc.get("chunks_count")
-            ))
-        
-        return FileListResponse(files=files)
-        
-    except Exception as e:
-        logger.error(f"取得檔案列表失敗: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/kb/files/{file_id}")
-async def delete_file(file_id: str, current_user: dict = Depends(get_current_user)):
-    """
-    刪除使用者的檔案
-    """
-    try:
-        username = current_user["username"]
-        
-        # 從MongoDB查找檔案
-        file_doc = db_service.client.KB.kb_files.find_one({
-            "file_id": file_id,
-            "username": username
-        })
-        
-        if not file_doc:
-            raise HTTPException(status_code=404, detail="檔案不存在")
-        
-        # 刪除本地檔案
-        file_path = Path(file_doc["file_path"])
-        if file_path.exists():
-            file_path.unlink()
-        
-        # 從Milvus中刪除對應的向量數據
-        try:
-            # 取得使用者專屬的 collection 名稱
-            collection_name = RAGService.get_user_collection_name(username)
-            
-            # 初始化 RAG 服務並刪除向量數據
-            rag_service = RAGService()
-            if rag_service.has_collection(collection_name):
-                deleted_count = rag_service.milvus_service.delete_by_file_id(
-                    collection_name=collection_name,
-                    file_id=file_id,
-                    user_id=username
-                )
-                logger.info(f"已從 Milvus 刪除 {deleted_count} 個向量片段")
-            else:
-                logger.warning(f"Milvus 集合 {collection_name} 不存在，跳過向量刪除")
-        except Exception as e:
-            # 即使 Milvus 刪除失敗，也不影響其他刪除操作
-            logger.error(f"從 Milvus 刪除向量數據失敗: {e}")
-        
-        # 從MongoDB刪除檔案記錄
-        db_service.client.KB.kb_files.delete_one({
-            "file_id": file_id,
-            "username": username
-        })
-        
-        return {"message": "檔案已刪除", "file_id": file_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"刪除檔案失敗: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/chat/rag")
-async def rag_chat_endpoint(request: RAGChatRequest, current_user: dict = Depends(get_current_user)):
-    """
-    RAG聊天端點：基於使用者知識庫進行對話，支援 streaming 回應
-    """
-    async def generate() -> AsyncGenerator[str, None]:
-        try:
-            username = current_user["username"]
-            session_id = request.session_id or "default"
-            
-            logger.info(f"Received RAG chat request from {username}: {request.message[:50]}...")
-            
-            # 檢查使用者是否有上傳的檔案
-            file_count = db_service.client.KB.kb_files.count_documents({
-                "username": username,
-                "status": "processed"
-            })
-            
-            if file_count == 0:
-                error_msg = "尚未上傳任何檔案到知識庫，請先到 /kb 頁面上傳PDF檔案"
-                yield json.dumps({"error": error_msg}) + "\n"
-                return
-            
-            # 獲取使用者專屬collection名稱
-            collection_name = RAGService.get_user_collection_name(username)
-            
-            # 檢查collection是否存在
-            if not rag_service.has_collection(collection_name):
-                error_msg = "知識庫尚未初始化，請重新上傳檔案"
-                yield json.dumps({"error": error_msg}) + "\n"
-                return
-            
-            # 載入聊天歷史
-            try:
-                history = db_service.get_chat_history(
-                    session_id=session_id,
-                    username=username
-                )
-                logger.info(f"Loaded {len(history)} historical messages")
-            except Exception as history_error:
-                logger.warning(f"Could not load chat history: {history_error}")
-                history = []
-            
-            # 執行RAG檢索和生成
-            try:
-                logger.info("Performing RAG retrieval and generation...")
-                rag_result = rag_service.rag(
-                    query=request.message,
-                    collection_name=collection_name,
-                    user_id=username,
-                    limit=5
-                )
-                
-                bot_response = rag_result["response"]
-                retrieved_docs = rag_result.get("retrieved_docs", [])
-                
-                logger.info(f"RAG completed with {len(retrieved_docs)} retrieved documents")
-                
-            except Exception as rag_error:
-                logger.error(f"RAG processing failed: {rag_error}")
-                bot_response = f"抱歉，處理您的問題時發生錯誤：{str(rag_error)}"
-                retrieved_docs = []
-            
-            logger.info("RAG response received, starting streaming...")
-
-            # Stream each character with a small delay
-            for char in bot_response:
-                yield json.dumps({"token": char}) + "\n"
-                await asyncio.sleep(0.01)  # Small delay to make streaming visible
-            
-            # 儲存對話記錄
-            try:
-                db_service.save_chat_message(
-                    user_message=request.message,
-                    bot_response=bot_response,
-                    session_id=session_id,
-                    username=username
-                )
-                logger.info("RAG chat message saved to database")
-            except Exception as db_error:
-                logger.error(f"Failed to save RAG chat message: {db_error}")
-            
-            # 發送檢索到的文檔
-            if retrieved_docs:
-                yield json.dumps({"retrieved_docs": retrieved_docs}) + "\n"
-            
-        except Exception as e:
-            error_msg = f"Error generating RAG response: {str(e)}"
-            logger.error(error_msg)
-            yield json.dumps({"error": error_msg}) + "\n"
-    
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
- 

@@ -1,1 +1,7 @@
 .env
+111.pdf
+123.pdf
+test.pdf
+/kb_uploads_data
+/rag_storage_data
+/processing_state.json

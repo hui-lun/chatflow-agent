@@ -1,140 +1,109 @@
-import os
+import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from collections import OrderedDict
+from raganything import RAGAnything
 
-from .models import RAGResponse, SearchResult
-from .vector_service import VectorService
-from .milvus_service import MilvusService
-from .document_processor import DocumentProcessor
-from app.services.llm import get_llm
-
-logger = logging.getLogger(__name__)
+# Import the async factory function and the new state manager
+from .factory import create_and_initialize_rag_for_user
+from . import state_manager
 
 class RAGService:
     """
-    Hybrid RAG over Milvus using dense and sparse vectors with RRF fusion.
-    Requires embedding server exposing /hybrid-embed.
+    Manages the lifecycle of RAG instances and provides a high-level API
+    for document processing and querying.
+
+    Implements an LRU cache to manage memory usage by evicting instances
+    for the least recently used users.
     """
-    DEFAULT_VECTOR_DIM = 1024
-    
-    @staticmethod
-    def get_user_collection_name(username: str) -> str:
-        """根據使用者名稱生成專屬的 collection 名稱"""
-        if not username:
-            raise ValueError("使用者名稱不能為空")
-        return f"kb_{username}"
-    
-    def __init__(
-        self,
-        embedding_url: Optional[str] = None,
-        milvus_uri: Optional[str] = None,
-    ) -> None:
-        """Initialize the RAG service."""
-        self.vector_service = VectorService(embedding_url)
-        self.milvus_service = MilvusService(milvus_uri)
-        self.document_processor = DocumentProcessor()
+    def __init__(self, max_cache_size: int = 100):
+        """
+        Initializes the service.
+        :param max_cache_size: The maximum number of user RAG instances to keep in memory.
+        """
+        self._rag_instances = OrderedDict()
+        self._instance_locks = {}
+        self._max_cache_size = max_cache_size
+        logging.info(f"RAGService initialized with an LRU cache size of {max_cache_size}.")
 
-    def create_collection(self, collection_name: str, dense_vector_size: int = None) -> None:
-        """創建或驗證 Milvus 集合"""
-        self.milvus_service.create_collection(
-            collection_name,
-            dense_vector_size or self.DEFAULT_VECTOR_DIM
-        )
-        
-    def index_pdfs(
-        self,
-        pdf_paths: List[str],
-        collection_name: str,
-        user_id: str,
-        dense_vector_size: int = None,
-        file_id: str = None
-    ) -> Dict[str, Any]:
-        """使用語義分塊策略將 PDF 文檔索引到 Milvus 集合中。"""
-        if not pdf_paths:
-            raise ValueError("未提供 PDF 文件路徑")
+    async def _get_or_create_rag_instance(self, user_id: str) -> RAGAnything:
+        """
+        Retrieves a user-specific RAG instance from the cache or creates a new one.
+        Uses an LRU policy to manage the cache size.
+        """
+        if user_id in self._rag_instances:
+            self._rag_instances.move_to_end(user_id)
+            return self._rag_instances[user_id]
+
+        if user_id not in self._instance_locks:
+            self._instance_locks[user_id] = asyncio.Lock()
+
+        async with self._instance_locks[user_id]:
+            if user_id in self._rag_instances:
+                return self._rag_instances[user_id]
+
+            logging.info(f"RAG instance for user '{user_id}' not in cache. Creating...")
             
-        self.create_collection(collection_name, dense_vector_size)
-        
-        all_chunks = self.document_processor.process_and_chunk_pdfs(pdf_paths)
-        if not all_chunks:
-            raise ValueError("沒有從 PDF 中提取到任何有效的文本塊。")
+            if len(self._rag_instances) >= self._max_cache_size:
+                oldest_user_id, _ = self._rag_instances.popitem(last=False)
+                self._instance_locks.pop(oldest_user_id, None)
+                logging.info(f"Cache full. Evicted RAG instance for user '{oldest_user_id}'.")
 
-        entities, _, _ = self.document_processor.prepare_for_indexing(
-            all_chunks, user_id, self.vector_service, file_id
-        )
-        
-        if not entities:
-            raise RuntimeError("未能為文本塊生成有效的嵌入向量。")
-        
-        points_upserted = self.milvus_service.insert_documents(collection_name, entities)
-        
-        results = {
-            "collection": collection_name,
-            "user_id": user_id,
-            "documents_processed": len(pdf_paths),
-            "chunks_indexed": len(entities),
-            "points_upserted": points_upserted,
-            "files": [os.path.basename(p) for p in pdf_paths]
-        }
-        
-        logger.info(f"索引完成: {results}")
-        return results
+            rag_system = await create_and_initialize_rag_for_user(user_id)
+            
+            self._rag_instances[user_id] = rag_system
+            self._rag_instances.move_to_end(user_id)
+            return rag_system
 
-    def search(self, query: str, collection_name: str, user_id: str, limit: int = 20, score_threshold: float = 0.0, metadata_filter: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
-        """使用混合搜索（密集+稀疏向量）和 RRF 重新排序搜索相似文檔"""
+    async def process_document(self, user_id: str, file_path: str) -> bool:
+        """
+        Processes a document for a specific user, skipping if already processed.
+        Returns True if processed, False if skipped.
+        """
+        state = await state_manager.load_state()
+        if state_manager.is_file_processed(user_id, file_path, state):
+            logging.info(f"Service: Document '{file_path}' already processed for user '{user_id}'. Skipping.")
+            return False
+
+        logging.info(f"Service: Processing document '{file_path}' for user '{user_id}'")
         try:
-            vectors = self.vector_service.prepare_query_vectors(query)
-            logger.info('='*60)
-            logger.info(f'test: {metadata_filter}')
-            logger.info('='*60)
-            results = self.milvus_service.hybrid_search(
-                collection_name=collection_name,
-                dense_vector=vectors['dense_vector'],
-                sparse_vector=vectors['sparse_vector'],
-                user_id=user_id,
-                limit=limit,
-                metadata_filter=metadata_filter
-            )
+            rag_system = await self._get_or_create_rag_instance(user_id)
+            await rag_system.process_document_complete(file_path=file_path, parse_method="auto")
             
-            if score_threshold > 0.0:
-                results = [r for r in results if r['score'] >= score_threshold]
+            # Mark as processed and save state
+            updated_state = state_manager.mark_file_as_processed(user_id, file_path, state)
+            await state_manager.save_state(updated_state)
             
-            return results
-            
+            logging.info(f"Service: Document '{file_path}' processed and marked as complete for user '{user_id}'")
+            return True
         except Exception as e:
-            logger.error(f"搜索失敗: {e}", exc_info=True)
+            logging.error(f"Service: Error processing document for user '{user_id}': {e}", exc_info=True)
             raise
 
-    def generate(self, query: str, context_chunks: List[Dict[str, Any]]) -> str:
-        """使用語言模型生成回應"""
-        context = "\n---\n".join(c["text"] for c in context_chunks)
-        prompt = (
-            "基於以下上下文，請詳細並準確地回答用戶的問題。請整合所有相關資訊，不要遺漏細節。\n\n"
-            f"上下文：\n{context}\n\n用戶問題：{query}\n\n回答："
-        )
-
+    async def query(self, user_id: str, question: str) -> dict:
+        """Performs a RAG query for a specific user."""
+        logging.info(f"Service: Executing query for user '{user_id}': '{question[:50]}...'")
         try:
-            llm = get_llm()
-            result = llm.invoke(prompt)
-            return result.content if hasattr(result, "content") else str(result)
+            rag_system = await self._get_or_create_rag_instance(user_id)
+            
+            # The logic to make the query user-specific is now correctly encapsulated
+            # within the UserAwareLLM class in tenancy.py, so we pass the original question.
+            response = await rag_system.aquery(question, mode="hybrid")
+            
+            answer = getattr(response, 'answer', str(response))
+            retrieved_docs = getattr(response, 'context', [])
+            
+            def format_doc(doc):
+                if hasattr(doc, 'to_dict'):
+                    return doc.to_dict()
+                return {"text": str(doc), "metadata": {}}
+
+            formatted_docs = [format_doc(doc) for doc in retrieved_docs]
+            logging.info(f"Service: Query for user '{user_id}' completed. Returning answer and {len(formatted_docs)} docs.")
+            return {"response": answer, "retrieved_docs": formatted_docs}
         except Exception as e:
-            logger.error(f"LLM 生成失敗: {e}")
-            return "（提示：目前無法連線至文字生成服務，僅返回檢索到的內容摘要。）\n\n" + context[:800]
+            logging.error(f"Service: Error during query for user '{user_id}': {e}", exc_info=True)
+            raise
 
-    def has_collection(self, collection_name: str) -> bool:
-        """檢查集合是否存在"""
-        return self.milvus_service.has_collection(collection_name)
-        
-    def rag(self, query: str, collection_name: str, user_id: str, limit: int = 20, metadata_filter: Optional[Dict[str, Any]] = None) -> RAGResponse:
-        """完整的 RAG 流程：檢索並生成。"""
-        try:
-            retrieved = self.search(query, collection_name, user_id, limit=limit, metadata_filter=metadata_filter)
-        except Exception as e:
-            logger.error(f"搜索失敗: {e}", exc_info=True)
-            return {"response": f"檢索發生錯誤：{e}", "retrieved_docs": []}
 
-        if not retrieved:
-            return {"response": "抱歉，沒有找到相關的文檔。", "retrieved_docs": []}
-
-        answer = self.generate(query, retrieved)
-        return {"response": answer, "retrieved_docs": retrieved}
+# Create a singleton instance of the RAGService
+rag_service_instance = RAGService()

@@ -9,6 +9,10 @@ services:
     environment:
       - MONGO_HOST=mongodb
       - MONGO_PORT=27017
+    volumes:
+      - ./rag_storage_data:/app/rag_storage
+      - ./kb_uploads_data:/app/kb_uploads
+      - ./processing_state.json:/app/processing_state.json
     depends_on:
       - mongodb
     command: >
