@@ -27,7 +27,7 @@ bdm_assistant:
     • 記憶體類型：[memoryType]
     • 記憶體模組類型：[memoryR_U_DIMM]
     • LAN 連接埠：[systemInfo.lan]
-    • 儲存資訊：[storageInfo]
+    • 儲存資訊：[RAWstorageInfo]
     • PCIe 資訊：[pcieInfo]
     • OCP 支援：[OCP]
     • PSU 規格：[systemInfo.psu]

@@ -361,16 +361,43 @@ async def spec_search_chat_endpoint(request: Request, current_user: dict = Depen
             qvl_downloads = []
             if "QVL 資料查詢結果" in bot_response:
                 try:
-                    # 從 user query 中提取型號
+                    # 從 bot_response 和 user query 中提取型號
                     import re
-                    # model_pattern = r'[A-Z]\d{3}-[A-Z0-9]{3}-[A-Z]{3}\d'
                     model_pattern = r'\b[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}\b'
-                    user_models = re.findall(model_pattern, message)
-                    
-                    if user_models:
-                        project_model = user_models[0]
+
+                    # 首先從 bot_response 中尋找（會是正確格式的大寫型號）
+                    bot_models = re.findall(model_pattern, bot_response)
+
+                    if bot_models:
+                        project_model = bot_models[0]
+                    else:
+                        # 如果 bot_response 中沒有，從 user query 中尋找並轉換為大寫
+                        case_insensitive_pattern = r'\b[A-Za-z0-9]{3,4}-[A-Za-z0-9]{2,4}-[A-Za-z0-9]{3,4}\b'
+                        user_models = re.findall(case_insensitive_pattern, message)
+
+                        if user_models:
+                            project_model = user_models[0].upper()
+                        else:
+                            project_model = None
+
+                    if project_model:
+                        # 檢查是否有指定 gbtSn
+                        gbt_sn_pattern = r'\b6[A-Z0-9]{15,20}\b'
+                        user_gbt_sns = re.findall(gbt_sn_pattern, message)
+                        bot_gbt_sns = re.findall(gbt_sn_pattern, bot_response)
+
+                        target_gbt_sn = None
+                        if bot_gbt_sns:
+                            target_gbt_sn = bot_gbt_sns[0]
+                        elif user_gbt_sns:
+                            target_gbt_sn = user_gbt_sns[0]
+
                         matching_collections = db_service.find_matching_qvl_collections(project_model)
-                        
+
+                        # 如果有指定 gbtSn，只保留包含該 gbtSn 的 collection
+                        if target_gbt_sn:
+                            matching_collections = [col for col in matching_collections if target_gbt_sn in col]
+
                         for collection_name in matching_collections:
                             qvl_downloads.append({
                                 "collection_name": collection_name,
