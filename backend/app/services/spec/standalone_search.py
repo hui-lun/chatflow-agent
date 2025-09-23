@@ -255,6 +255,7 @@ def search_prefix_models(collection, machine_prefix: str) -> str:
 
         # 提取所有匹配的型號
         model_list = [result.get("ProjectModel", "未知型號") for result in results]
+        model_list = list(set(model_list))  # 去重
         model_list.sort()  # 排序
 
         response = f"🔍 **找到 {len(model_list)} 個以 {machine_prefix} 開頭的機器型號**\n\n"
@@ -267,7 +268,7 @@ def search_prefix_models(collection, machine_prefix: str) -> str:
 
         response += f"\n💡 **建議**：\n"
         response += "• 請使用完整的機器型號進行詳細規格查詢\n"
-        response += "• 例如：查詢 '{model_list[0]}' 的詳細規格\n"
+        response += f"• 例如：查詢 '{model_list[0]}' 的詳細規格\n"
 
         return response
 
