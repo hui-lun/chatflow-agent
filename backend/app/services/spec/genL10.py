@@ -21,8 +21,9 @@ def parse_selected_machine(user_query: str) -> Optional[str]:
     """
     try:
         # 使用正則表達式匹配機器型號格式
-        # 支援格式：R283-Z90-AAD1-000, R283-Z90-AAD1 等
-        model_pattern = r'\b[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?\b'
+        # 支援格式：R283-Z90-AAD1-000, R283-Z90-AAD1, G4L3-ZX1-LAX2-000 等
+        # 移除 word boundary \b 以支援緊接在中文字後的機器型號
+        model_pattern = r'[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?'
         matches = re.findall(model_pattern, user_query.upper())
 
         if matches:

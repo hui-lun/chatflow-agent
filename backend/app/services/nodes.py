@@ -28,7 +28,8 @@ def extract_model_names(query: str) -> list[str]:
     支援多種機器型號格式，如：R283-Z90-AAD1-000, G4L3-ZX1-LAX2-000 等
     """
     # 統一使用與 genL10.py 相同的 pattern，支援更廣泛的機器型號格式
-    pattern = r'\b[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?\b'
+    # 移除 word boundary \b 以支援緊接在中文字後的機器型號
+    pattern = r'[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?'
 
     matches = re.findall(pattern, query.upper())  # 轉為大寫確保匹配
     return matches
@@ -127,7 +128,8 @@ def recommend_node(state: AgentState) -> dict:
     try:
         # 檢查是否為直接選擇機器的情況
         selection_keywords = ["選擇", "選", "要", "用", "取", "pick", "choose", "select", "我選"]
-        model_pattern = r'\b[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?\b'
+        # 使用與 extract_model_names 相同的 pattern
+        model_pattern = r'[A-Z0-9]{3,4}-[A-Z0-9]{2,4}-[A-Z0-9]{3,4}(?:-[A-Z0-9]{1,3})?'
 
         has_selection = any(keyword in query for keyword in selection_keywords)
         model_matches = re.findall(model_pattern, query.upper())
