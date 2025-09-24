@@ -57,16 +57,29 @@ def parse_selected_machine(user_query: str) -> Optional[str]:
 def get_qvl_collection_data(project_model: str) -> Optional[List[Dict]]:
     """
     根據機器型號獲取對應的 QVL collection 資料
+    支援智能匹配：如果完整型號找不到，會嘗試移除數字後綴
 
     Args:
-        project_model: 機器型號
+        project_model: 機器型號（例如：G4L3-ZX1-LAX2-000 或 G4L3-ZX1-LAX2）
 
     Returns:
         List[Dict]: QVL 資料列表，如果找不到則返回 None
     """
     try:
-        # 查找匹配的 QVL collections
+        logger.info(f"正在查找機器型號 {project_model} 的 QVL 資料")
+
+        # 1. 直接匹配完整型號
         matching_collections = db_service.find_matching_qvl_collections(project_model)
+
+        if not matching_collections and '-' in project_model:
+            logger.info(f"直接匹配 {project_model} 失敗，嘗試移除數字後綴")
+
+            # 2. 移除最後的數字後綴（如 -000）再嘗試匹配
+            parts = project_model.split('-')
+            if len(parts) >= 4 and parts[-1].isdigit():
+                shortened_model = '-'.join(parts[:-1])
+                logger.info(f"嘗試匹配縮短型號: {shortened_model}")
+                matching_collections = db_service.find_matching_qvl_collections(shortened_model)
 
         if not matching_collections:
             logger.warning(f"未找到與 {project_model} 相關的 QVL collections")
