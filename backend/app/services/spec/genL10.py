@@ -320,7 +320,7 @@ def format_component_info(component: Optional[Dict]) -> str:
         specification = component.get("specification", "無規格資訊")
         power_consumption = component.get("powerConsumption", "未知功耗")
 
-        return f"{gbt_sn} - {description} - {specification} - {power_consumption}"
+        return f"  GBT SN: {gbt_sn}\n  Description: {description}\n  Specification: {specification}\n  Watt: {power_consumption}"
 
     except Exception as e:
         logger.error(f"格式化零件資訊時發生錯誤: {e}")
@@ -338,17 +338,19 @@ def format_l10_response(project_model: str, components: Dict[str, Optional[Dict]
         str: 完整的 L10 表格回覆
     """
     try:
-        response = f"以下為您選擇的L10:\n\n{project_model}\n"
+        response = f"以下是為您配置的L10:\n\n{project_model}\n\n"
 
         barebone_info = format_component_info(components.get("barebone"))
         cpu_info = format_component_info(components.get("cpu"))
         memory_info = format_component_info(components.get("memory"))
         storage_info = format_component_info(components.get("storage"))
 
-        response += f"Barebone: {barebone_info}\n"
-        response += f"CPU： {cpu_info}\n"
-        response += f"MEMORY： {memory_info}\n"
-        response += f"STORAGE： {storage_info}\n"
+        response += f"【Barebone】\n{barebone_info}\n\n"
+        response += f"【CPU】\n{cpu_info}\n\n"
+        response += f"【MEMORY】\n{memory_info}\n\n"
+        response += f"【STORAGE】\n{storage_info}\n\n"
+
+        response += f"若想取得更多L10配置，請再輸入需求。"
 
         return response
 
